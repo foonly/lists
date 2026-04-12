@@ -133,9 +133,10 @@ function showToast(message: string, duration = 2000) {
 async function handleShare() {
 	if (!creds.value) return;
 	const shareString = encodeShareString(creds.value);
+	const shareUrl = `${window.location.origin}/import/${encodeURIComponent(shareString)}`;
 	try {
-		await navigator.clipboard.writeText(shareString);
-		showToast("Copied!");
+		await navigator.clipboard.writeText(shareUrl);
+		showToast("Link copied!");
 	} catch {
 		showToast("Failed to copy");
 	}

@@ -10,11 +10,8 @@ const router = useRouter();
 const appStore = useAppStore();
 
 const showCreateForm = ref(false);
-const showImportForm = ref(false);
 const newListName = ref("");
-const shareString = ref("");
 const creating = ref(false);
-const importing = ref(false);
 const error = ref("");
 const removeTarget = ref<string | null>(null);
 const removeListName = ref("");
@@ -64,40 +61,14 @@ async function handleCreate() {
 	}
 }
 
-async function handleImport() {
-	const raw = shareString.value.trim();
-	if (!raw) return;
-
-	importing.value = true;
-	error.value = "";
-	try {
-		await appStore.importList(raw);
-		shareString.value = "";
-		showImportForm.value = false;
-	} catch (e: unknown) {
-		error.value = e instanceof Error ? e.message : "Failed to import list.";
-	} finally {
-		importing.value = false;
-	}
-}
-
 function openCreate() {
 	showCreateForm.value = true;
-	showImportForm.value = false;
-	error.value = "";
-}
-
-function openImport() {
-	showImportForm.value = true;
-	showCreateForm.value = false;
 	error.value = "";
 }
 
 function cancelForms() {
 	showCreateForm.value = false;
-	showImportForm.value = false;
 	newListName.value = "";
-	shareString.value = "";
 	error.value = "";
 }
 </script>
@@ -136,7 +107,7 @@ function cancelForms() {
 		<main class="home-content">
 			<!-- Empty state -->
 			<div
-				v-if="appStore.lists.length === 0 && !showCreateForm && !showImportForm"
+				v-if="appStore.lists.length === 0 && !showCreateForm"
 				class="empty-state"
 			>
 				<div class="empty-icon" aria-hidden="true">
@@ -214,44 +185,8 @@ function cancelForms() {
 				</form>
 			</Transition>
 
-			<!-- Import form -->
-			<Transition name="form-fade">
-				<form
-					v-if="showImportForm"
-					class="inline-form"
-					@submit.prevent="handleImport"
-				>
-					<label class="form-label" for="share-string">Paste share link</label>
-					<div class="form-row">
-						<input
-							id="share-string"
-							v-model="shareString"
-							type="text"
-							class="input"
-							placeholder="name|syncId|cryptKey|secret"
-							autocomplete="off"
-							autofocus
-						/>
-						<button
-							type="submit"
-							class="btn-primary"
-							:disabled="!shareString.trim() || importing"
-						>
-							{{ importing ? "Importing…" : "Import" }}
-						</button>
-					</div>
-					<button
-						type="button"
-						class="btn-ghost cancel-btn"
-						@click="cancelForms"
-					>
-						Cancel
-					</button>
-				</form>
-			</Transition>
-
 			<!-- Action buttons -->
-			<div v-if="!showCreateForm && !showImportForm" class="actions">
+			<div v-if="!showCreateForm" class="actions">
 				<button class="btn-primary action-btn" @click="openCreate">
 					<svg
 						width="16"
@@ -268,31 +203,6 @@ function cancelForms() {
 						/>
 					</svg>
 					Create List
-				</button>
-				<button class="btn action-btn" @click="openImport">
-					<svg
-						width="16"
-						height="16"
-						viewBox="0 0 16 16"
-						fill="none"
-						aria-hidden="true"
-					>
-						<path
-							d="M2 10V13H14V10"
-							stroke="currentColor"
-							stroke-width="1.5"
-							stroke-linecap="round"
-							stroke-linejoin="round"
-						/>
-						<path
-							d="M8 2V10M5 7L8 10L11 7"
-							stroke="currentColor"
-							stroke-width="1.5"
-							stroke-linecap="round"
-							stroke-linejoin="round"
-						/>
-					</svg>
-					Import List
 				</button>
 			</div>
 		</main>
