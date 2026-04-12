@@ -348,6 +348,11 @@ export const useAppStore = defineStore("app", () => {
 			state.value = result.data;
 			dirty.value = false;
 			saveToLocalStorage();
+		} else if (state.value) {
+			// Backend no longer has this record (cleaned up).  Re-register by
+			// marking dirty and pushing the local state back.
+			dirty.value = true;
+			await syncToBackend();
 		}
 	}
 
