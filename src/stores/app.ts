@@ -21,14 +21,7 @@ import {
 const APP_STATE_KEY = "lists-app-state";
 const APP_CREDENTIALS_KEY = "lists-app-credentials";
 
-/**
- * The backend API base URL sourced from the VITE_API_BASE_URL environment
- * variable.  In development this points at the local Go server
- * (http://localhost:8080/api/v1) and in production it defaults to the
- * relative path /api/v1 so it hits the same origin.
- */
-const DEFAULT_API_BASE_URL: string =
-	import.meta.env.VITE_API_BASE_URL ?? "/api/v1";
+const API_BASE_URL: string = import.meta.env.VITE_API_BASE_URL ?? "/api/v1";
 
 export interface AppCredentials {
 	syncId: string;
@@ -68,21 +61,12 @@ export const useAppStore = defineStore("app", () => {
 		return encodeAppCredentials(credentials.value);
 	});
 
-	/**
-	 * Resolved backend URL: honours the optional per-user override stored in
-	 * settings, falling back to the build-time env var / default.
-	 */
-	const apiBaseUrl = computed(() => {
-		const override = state.value?.settings.backendUrl;
-		return override && override.length > 0 ? override : DEFAULT_API_BASE_URL;
-	});
-
 	// ---------------------------------------------------------------------------
 	// Internal helpers
 	// ---------------------------------------------------------------------------
 
 	function getClient(): SyncClient {
-		return new SyncClient(apiBaseUrl.value);
+		return new SyncClient(API_BASE_URL);
 	}
 
 	// ---------------------------------------------------------------------------
@@ -123,13 +107,9 @@ export const useAppStore = defineStore("app", () => {
 	}
 
 	/**
-	 * First-time setup.  The backend URL is optional — when omitted we fall
-	 * back to the VITE_API_BASE_URL env var.
+	 * First-time setup.
 	 */
-	async function setup(
-		newUsername: string,
-		backendUrl?: string,
-	): Promise<void> {
+	async function setup(newUsername: string): Promise<void> {
 		const syncId = generateSyncId();
 		const cryptKey = await generateCryptKey();
 		const secret = generateSecret();
@@ -142,7 +122,6 @@ export const useAppStore = defineStore("app", () => {
 			lists: [],
 			settings: {
 				syncIntervalSeconds: 30,
-				backendUrl: backendUrl?.trim() || "",
 				theme: "auto",
 			},
 		};
@@ -157,8 +136,7 @@ export const useAppStore = defineStore("app", () => {
 	}
 
 	/**
-	 * Restore from an existing set of app-blob credentials.  The backend URL
-	 * is optional — when omitted we use the env-var default.
+	 * Restore from an existing set of app-blob credentials.
 	 */
 	async function restore(credentialStr: string): Promise<void> {
 		const parsed = decodeAppCredentials(credentialStr);
@@ -372,7 +350,6 @@ export const useAppStore = defineStore("app", () => {
 		username,
 		lists,
 		settings,
-		apiBaseUrl,
 		credentialString,
 
 		// Actions

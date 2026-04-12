@@ -7,8 +7,9 @@ import AppBar from "@/components/AppBar.vue";
 const router = useRouter();
 const appStore = useAppStore();
 
+const appVersion = __APP_VERSION__;
+
 const username = ref("");
-const backendUrlOverride = ref("");
 const theme = ref<"light" | "dark" | "auto">("auto");
 const syncInterval = ref(30);
 
@@ -16,21 +17,9 @@ const copied = ref<string | null>(null);
 const saved = ref(false);
 const showResetConfirm = ref(false);
 
-const envBackendUrl = import.meta.env.VITE_API_BASE_URL ?? "/api/v1";
-
-const effectiveBackendUrl = () => {
-	const override = backendUrlOverride.value.trim();
-	return override || envBackendUrl;
-};
-
 onMounted(() => {
 	username.value = appStore.username;
 	if (appStore.settings) {
-		// Only show the override if it differs from the env default
-		const stored = appStore.settings.backendUrl;
-		if (stored && stored !== envBackendUrl) {
-			backendUrlOverride.value = stored;
-		}
 		theme.value = appStore.settings.theme;
 		syncInterval.value = appStore.settings.syncIntervalSeconds;
 	}
@@ -40,7 +29,6 @@ async function handleSave() {
 	if (!appStore.state) return;
 
 	appStore.state.username = username.value.trim() || appStore.state.username;
-	appStore.state.settings.backendUrl = effectiveBackendUrl();
 	appStore.state.settings.theme = theme.value;
 	appStore.state.settings.syncIntervalSeconds = Math.max(5, syncInterval.value);
 	appStore.dirty = true;
@@ -120,26 +108,6 @@ function handleReset() {
 				<p class="field-hint">Shown on items you edit.</p>
 			</section>
 
-			<!-- Backend URL -->
-			<section class="settings-section">
-				<label class="field-label" for="settings-backend">Backend URL</label>
-				<div class="backend-default">
-					<span class="backend-default-label">Default:</span>
-					<code class="backend-default-value">{{ envBackendUrl }}</code>
-				</div>
-				<input
-					id="settings-backend"
-					v-model="backendUrlOverride"
-					type="url"
-					class="input"
-					:placeholder="`Using default: ${envBackendUrl}`"
-				/>
-				<p class="field-hint">
-					Leave empty to use the default backend. Only set this if you run your
-					own sync server at a different address.
-				</p>
-			</section>
-
 			<!-- Theme -->
 			<section class="settings-section">
 				<label class="field-label" for="settings-theme">Theme</label>
@@ -201,6 +169,11 @@ function handleReset() {
 						{{ copied === "app-creds" ? "✓ Copied" : "Copy" }}
 					</button>
 				</div>
+			</section>
+
+			<!-- App version -->
+			<section class="settings-section version-section">
+				<p class="version-text">Lists v{{ appVersion }}</p>
 			</section>
 
 			<!-- Danger zone -->
@@ -279,29 +252,6 @@ function handleReset() {
 	color: var(--color-text-secondary);
 	margin-top: 0.3rem;
 	line-height: 1.4;
-}
-
-.backend-default {
-	display: flex;
-	align-items: center;
-	gap: 0.4rem;
-	margin-bottom: 0.4rem;
-}
-
-.backend-default-label {
-	font-size: 0.75rem;
-	color: var(--color-text-secondary);
-	font-weight: 500;
-}
-
-.backend-default-value {
-	font-size: 0.75rem;
-	font-family: "SF Mono", "Fira Code", "Consolas", monospace;
-	color: var(--color-text);
-	background: var(--color-bg);
-	padding: 0.15rem 0.4rem;
-	border-radius: 4px;
-	border: 1px solid var(--color-border);
 }
 
 .input {
@@ -442,6 +392,17 @@ function handleReset() {
 }
 
 /* Danger zone */
+.version-section {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.version-text {
+	font-size: 0.75rem;
+	color: var(--color-text-secondary);
+}
+
 .danger-section {
 	margin-top: 0.5rem;
 }

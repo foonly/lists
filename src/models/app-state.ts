@@ -16,24 +16,12 @@ export const AppStateSchema = z.object({
 	lists: z.array(ListCredentialsSchema),
 	settings: z.object({
 		syncIntervalSeconds: z.number().default(30),
-		// Optional override — when absent, the app uses VITE_API_BASE_URL from the environment.
-		backendUrl: z.string().optional(),
 		theme: z.enum(["light", "dark", "auto"]).default("auto"),
 	}),
 });
 
 export type ListCredentials = z.infer<typeof ListCredentialsSchema>;
 export type AppState = z.infer<typeof AppStateSchema>;
-
-/**
- * Resolve the effective backend URL.
- * Priority: explicit override in settings > VITE_API_BASE_URL env var > "/api/v1" fallback.
- */
-export function resolveBackendUrl(settings?: AppState["settings"]): string {
-	const override = settings?.backendUrl?.trim();
-	if (override) return override;
-	return import.meta.env.VITE_API_BASE_URL ?? "/api/v1";
-}
 
 // Credential share format: name|syncId|cryptKey|secret
 // Uses pipe delimiter (not valid in base64, so parsing is unambiguous)

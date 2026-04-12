@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted } from "vue";
+import { onMounted, watch } from "vue";
 import { useAppStore } from "@/stores/app";
 
 const appStore = useAppStore();
@@ -7,6 +7,18 @@ const appStore = useAppStore();
 onMounted(async () => {
 	await appStore.init();
 });
+
+watch(
+	() => appStore.settings?.theme,
+	(theme) => {
+		if (theme === "auto" || !theme) {
+			document.documentElement.removeAttribute("data-theme");
+		} else {
+			document.documentElement.setAttribute("data-theme", theme);
+		}
+	},
+	{ immediate: true },
+);
 </script>
 
 <template>

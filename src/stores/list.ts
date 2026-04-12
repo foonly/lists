@@ -105,8 +105,7 @@ export const useListStore = defineStore("list", () => {
 	}
 
 	function getClient(): SyncClient {
-		const appStore = useAppStore();
-		return new SyncClient(appStore.apiBaseUrl);
+		return new SyncClient(import.meta.env.VITE_API_BASE_URL ?? "/api/v1");
 	}
 
 	function idbKey(): string {
@@ -273,11 +272,16 @@ export const useListStore = defineStore("list", () => {
 	}
 
 	// ---------------------------------------------------------------------------
-	// Sync timing – 5 s debounced push after mutations, 30 s poll while open
+	// Sync timing – 5 s debounced push after mutations, configurable poll while open
 	// ---------------------------------------------------------------------------
 
 	const DEBOUNCE_MS = 5_000;
-	const POLL_MS = 30_000;
+
+	function getPollMs(): number {
+		const appStore = useAppStore();
+		const seconds = appStore.settings?.syncIntervalSeconds ?? 30;
+		return Math.max(5, seconds) * 1000;
+	}
 
 	/** Schedule a sync 5 s after the last mutation.  Resets on each call. */
 	function scheduleDebouncedSync(): void {
@@ -300,7 +304,7 @@ export const useListStore = defineStore("list", () => {
 			sync().catch(() => {
 				/* errors captured in syncMeta */
 			});
-		}, POLL_MS);
+		}, getPollMs());
 	}
 
 	function stopPollTimer(): void {
@@ -310,7 +314,7 @@ export const useListStore = defineStore("list", () => {
 		}
 	}
 
-	/** Restart the poll interval so the next tick is a full 30 s away. */
+	/** Restart the poll interval so the next tick is a full interval away. */
 	function resetPollTimer(): void {
 		if (pollTimer !== null) {
 			startPollTimer();
