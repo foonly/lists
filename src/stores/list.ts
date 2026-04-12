@@ -91,6 +91,8 @@ export const useListStore = defineStore("list", () => {
 	const credentials = ref<ListCredentials | null>(null);
 	const syncMeta = ref<SyncMeta>(defaultSyncMeta());
 	const checksumCache = ref<Map<string, string>>(new Map());
+	/** When true, background syncs are skipped to avoid overwriting in-progress edits. */
+	const editing = ref(false);
 
 	let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 	let pollTimer: ReturnType<typeof setInterval> | null = null;
@@ -561,6 +563,7 @@ export const useListStore = defineStore("list", () => {
 
 	async function sync(): Promise<void> {
 		if (!credentials.value) return;
+		if (editing.value) return;
 
 		const client = getClient();
 		if (!client) return;
@@ -647,6 +650,7 @@ export const useListStore = defineStore("list", () => {
 		credentials,
 		syncMeta,
 		checksumCache,
+		editing,
 
 		// Getters
 		items,

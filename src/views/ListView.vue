@@ -45,10 +45,12 @@ const editingItem = computed(() => {
 
 function handleEdit(id: string) {
 	editingItemId.value = id;
+	listStore.editing = true;
 }
 
 function handleCancelEdit() {
 	editingItemId.value = null;
+	listStore.editing = false;
 }
 
 async function handleUpdate(payload: {
@@ -65,6 +67,7 @@ async function handleUpdate(payload: {
 		group: payload.group,
 	});
 	editingItemId.value = null;
+	listStore.editing = false;
 }
 
 const syncId = computed(() => route.params.syncId as string);
