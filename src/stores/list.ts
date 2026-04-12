@@ -135,7 +135,7 @@ export const useListStore = defineStore("list", () => {
 
 	/** Items that are marked done and whose checksum still matches current content. */
 	const doneItems = computed(() => {
-		return nonDeletedItems.value.filter((item) => {
+		return items.value.filter((item) => {
 			if (item.done.value === null) return false;
 			const cached = checksumCache.value.get(item.id);
 			return cached !== undefined && item.done.value === cached;
@@ -144,7 +144,7 @@ export const useListStore = defineStore("list", () => {
 
 	/** Items that are marked done but whose content has since changed (checksum mismatch). */
 	const staleItems = computed(() => {
-		return nonDeletedItems.value.filter((item) => {
+		return items.value.filter((item) => {
 			if (item.done.value === null) return false;
 			const cached = checksumCache.value.get(item.id);
 			return cached !== undefined && item.done.value !== cached;
@@ -153,7 +153,7 @@ export const useListStore = defineStore("list", () => {
 
 	/** Items that are not marked done. */
 	const activeItems = computed(() => {
-		return nonDeletedItems.value.filter((item) => item.done.value === null);
+		return items.value.filter((item) => item.done.value === null);
 	});
 
 	/** Unique group names from non-deleted items. */
