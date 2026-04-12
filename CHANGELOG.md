@@ -1,6 +1,12 @@
 # Changelog
 
-### 1.1.1 (2026-04-12)
+### 1.1.2 (2026-04-12)
+
+#### Bug Fixes
+
+- app: re-register local state when backend record is missing (e3deb73)
+
+### v1.1.1 (2026-04-12)
 
 #### Maintenance
 
