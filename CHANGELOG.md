@@ -1,6 +1,12 @@
 # Changelog
 
-### 1.1.2 (2026-04-12)
+## 1.2.0 (2026-04-12)
+
+#### Features
+
+- app: remove per-user backend override and add theme/version UI (523ba60)
+
+### v1.1.2 (2026-04-12)
 
 #### Bug Fixes
 
