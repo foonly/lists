@@ -1,6 +1,12 @@
 # Changelog
 
-### 1.2.2 (2026-04-12)
+### 1.2.3 (2026-04-12)
+
+#### Bug Fixes
+
+- listview: adjust layout to prevent editor/footer overlap and restore scrolling (0cfd144)
+
+### v1.2.2 (2026-04-12)
 
 #### Bug Fixes
 
