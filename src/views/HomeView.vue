@@ -4,6 +4,7 @@ import { useRouter } from "vue-router";
 import { useAppStore } from "@/stores/app";
 import AppBar from "@/components/AppBar.vue";
 import ListCard from "@/components/ListCard.vue";
+import ConfirmDialog from "@/components/ConfirmDialog.vue";
 
 const router = useRouter();
 const appStore = useAppStore();
@@ -15,6 +16,28 @@ const shareString = ref("");
 const creating = ref(false);
 const importing = ref(false);
 const error = ref("");
+const removeTarget = ref<string | null>(null);
+const removeListName = ref("");
+
+function requestRemove(syncId: string) {
+	const list = appStore.lists.find((l) => l.syncId === syncId);
+	if (!list) return;
+	removeListName.value = list.name;
+	removeTarget.value = syncId;
+}
+
+function cancelRemove() {
+	removeTarget.value = null;
+	removeListName.value = "";
+}
+
+function confirmRemove() {
+	if (removeTarget.value) {
+		appStore.removeList(removeTarget.value);
+	}
+	removeTarget.value = null;
+	removeListName.value = "";
+}
 
 function navigateToList(syncId: string) {
 	router.push(`/list/${syncId}`);
@@ -148,6 +171,7 @@ function cancelForms() {
 					:key="creds.syncId"
 					:credentials="creds"
 					@click="navigateToList(creds.syncId)"
+					@remove="requestRemove(creds.syncId)"
 				/>
 			</div>
 
@@ -272,6 +296,25 @@ function cancelForms() {
 				</button>
 			</div>
 		</main>
+
+		<ConfirmDialog
+			:open="removeTarget !== null"
+			title="Remove list?"
+			confirm-label="Remove"
+			cancel-label="Cancel"
+			variant="danger"
+			@confirm="confirmRemove"
+			@cancel="cancelRemove"
+		>
+			<p>
+				You will lose access to <strong>{{ removeListName }}</strong> unless you
+				have the share credentials saved.
+			</p>
+			<p style="margin-top: 0.5rem">
+				This only removes the list from your device — the data on the server is
+				not deleted.
+			</p>
+		</ConfirmDialog>
 	</div>
 </template>
 

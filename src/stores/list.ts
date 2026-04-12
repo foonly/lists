@@ -92,6 +92,9 @@ export const useListStore = defineStore("list", () => {
 	const syncMeta = ref<SyncMeta>(defaultSyncMeta());
 	const checksumCache = ref<Map<string, string>>(new Map());
 
+	let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+	let pollTimer: ReturnType<typeof setInterval> | null = null;
+
 	// ---------------------------------------------------------------------------
 	// Internal helpers
 	// ---------------------------------------------------------------------------
@@ -270,6 +273,59 @@ export const useListStore = defineStore("list", () => {
 	}
 
 	// ---------------------------------------------------------------------------
+	// Sync timing – 5 s debounced push after mutations, 30 s poll while open
+	// ---------------------------------------------------------------------------
+
+	const DEBOUNCE_MS = 5_000;
+	const POLL_MS = 30_000;
+
+	/** Schedule a sync 5 s after the last mutation.  Resets on each call. */
+	function scheduleDebouncedSync(): void {
+		if (debounceTimer !== null) {
+			clearTimeout(debounceTimer);
+		}
+		debounceTimer = setTimeout(() => {
+			debounceTimer = null;
+			sync()
+				.then(() => resetPollTimer())
+				.catch(() => {
+					/* errors captured in syncMeta */
+				});
+		}, DEBOUNCE_MS);
+	}
+
+	function startPollTimer(): void {
+		stopPollTimer();
+		pollTimer = setInterval(() => {
+			sync().catch(() => {
+				/* errors captured in syncMeta */
+			});
+		}, POLL_MS);
+	}
+
+	function stopPollTimer(): void {
+		if (pollTimer !== null) {
+			clearInterval(pollTimer);
+			pollTimer = null;
+		}
+	}
+
+	/** Restart the poll interval so the next tick is a full 30 s away. */
+	function resetPollTimer(): void {
+		if (pollTimer !== null) {
+			startPollTimer();
+		}
+	}
+
+	function stopAllTimers(): void {
+		if (debounceTimer !== null) {
+			clearTimeout(debounceTimer);
+			debounceTimer = null;
+		}
+		stopPollTimer();
+	}
+
+	// ---------------------------------------------------------------------------
 	// Actions
 	// ---------------------------------------------------------------------------
 
@@ -283,13 +339,17 @@ export const useListStore = defineStore("list", () => {
 
 		await updateChecksums();
 
-		// Trigger a background sync (fire-and-forget)
-		sync().catch(() => {
-			/* errors are captured in syncMeta */
-		});
+		// Trigger a background sync, then start the 30 s poll timer
+		sync()
+			.then(() => startPollTimer())
+			.catch(() => {
+				/* errors are captured in syncMeta */
+				startPollTimer();
+			});
 	}
 
 	async function closeList(): Promise<void> {
+		stopAllTimers();
 		await saveToIndexedDB();
 
 		blob.value = null;
@@ -333,6 +393,8 @@ export const useListStore = defineStore("list", () => {
 		blob.value.items.push(item);
 		syncMeta.value.dirty = true;
 		await updateChecksums();
+		await saveToIndexedDB();
+		scheduleDebouncedSync();
 	}
 
 	async function updateItem(
@@ -375,6 +437,8 @@ export const useListStore = defineStore("list", () => {
 
 		syncMeta.value.dirty = true;
 		await updateChecksums();
+		await saveToIndexedDB();
+		scheduleDebouncedSync();
 	}
 
 	async function toggleDone(id: string): Promise<void> {
@@ -401,6 +465,8 @@ export const useListStore = defineStore("list", () => {
 
 		syncMeta.value.dirty = true;
 		await updateChecksums();
+		await saveToIndexedDB();
+		scheduleDebouncedSync();
 	}
 
 	async function reorderItem(
@@ -464,6 +530,8 @@ export const useListStore = defineStore("list", () => {
 
 		syncMeta.value.dirty = true;
 		await updateChecksums();
+		await saveToIndexedDB();
+		scheduleDebouncedSync();
 	}
 
 	async function toggleDelete(id: string): Promise<void> {
@@ -483,6 +551,8 @@ export const useListStore = defineStore("list", () => {
 
 		syncMeta.value.dirty = true;
 		await updateChecksums();
+		await saveToIndexedDB();
+		scheduleDebouncedSync();
 	}
 
 	async function sync(): Promise<void> {
