@@ -1,6 +1,12 @@
 # Changelog
 
-### 1.2.1 (2026-04-12)
+### 1.2.2 (2026-04-12)
+
+#### Bug Fixes
+
+- list: compute done, stale and active items from items instead of nonDeletedItems (45be6e3)
+
+### v1.2.1 (2026-04-12)
 
 #### Bug Fixes
 
