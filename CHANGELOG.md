@@ -1,6 +1,12 @@
 # Changelog
 
-## 1.2.0 (2026-04-12)
+### 1.2.1 (2026-04-12)
+
+#### Bug Fixes
+
+- list: skip background sync during in-progress edits (054c165)
+
+## v1.2.0 (2026-04-12)
 
 #### Features
 
