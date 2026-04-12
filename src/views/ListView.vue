@@ -552,7 +552,9 @@ watch(
 .list-view {
 	display: flex;
 	flex-direction: column;
-	min-height: 100dvh;
+	height: 100dvh;
+	overflow: hidden;
+	position: relative;
 }
 
 .name-display {
@@ -583,9 +585,10 @@ watch(
 
 .items-container {
 	flex: 1;
+	min-height: 0;
 	padding: 0 1rem 1rem;
 	overflow-y: auto;
-	padding-bottom: 5rem;
+	-webkit-overflow-scrolling: touch;
 }
 
 .empty-state {
@@ -720,8 +723,8 @@ watch(
 
 /* Toast */
 .toast {
-	position: fixed;
-	bottom: 5rem;
+	position: absolute;
+	bottom: 4.5rem;
 	left: 50%;
 	transform: translateX(-50%);
 	padding: 0.5rem 1.25rem;

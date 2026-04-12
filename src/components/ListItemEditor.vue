@@ -231,9 +231,7 @@ function toggleExpanded() {
 	background: var(--color-surface);
 	border-top: 1px solid var(--color-border);
 	padding: 0.75rem 1rem;
-	position: sticky;
-	bottom: 0;
-	z-index: 50;
+	flex-shrink: 0;
 }
 
 .item-editor.editing {
