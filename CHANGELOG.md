@@ -1,6 +1,12 @@
 # Changelog
 
-### 1.2.3 (2026-04-12)
+## 1.3.0 (2026-04-12)
+
+#### Features
+
+- import: add import route and ImportView and update sharing to copy import URL (66c90c3)
+
+### v1.2.3 (2026-04-12)
 
 #### Bug Fixes
 
