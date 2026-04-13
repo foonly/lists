@@ -302,10 +302,10 @@ export const useListStore = defineStore("list", () => {
 	}
 
 	// ---------------------------------------------------------------------------
-	// Sync timing – 5 s debounced push after mutations, configurable poll while open
+	// Sync timing – 15 s debounced push after mutations, configurable poll while open
 	// ---------------------------------------------------------------------------
 
-	const DEBOUNCE_MS = 5_000;
+	const DEBOUNCE_MS = 15_000;
 
 	function getPollMs(): number {
 		const appStore = useAppStore();
