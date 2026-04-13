@@ -1,6 +1,12 @@
 # Changelog
 
-## 1.4.0 (2026-04-13)
+### 1.4.1 (2026-04-13)
+
+#### Performance Improvements
+
+- list: increase debounced push delay to 15s (ee38e09)
+
+## v1.4.0 (2026-04-13)
 
 #### Features
 
