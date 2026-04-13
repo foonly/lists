@@ -183,6 +183,8 @@ export const useAppStore = defineStore("app", () => {
 			lastAccessedAt: now,
 			createdAt: now,
 			order: state.value.lists.length,
+			activeItemCount: 0,
+			totalItemCount: 0,
 		};
 
 		state.value.lists.push(creds);
@@ -225,6 +227,8 @@ export const useAppStore = defineStore("app", () => {
 			lastAccessedAt: now,
 			createdAt: now,
 			order: state.value.lists.length,
+			activeItemCount: 0,
+			totalItemCount: 0,
 		};
 
 		state.value.lists.push(creds);
@@ -273,6 +277,28 @@ export const useAppStore = defineStore("app", () => {
 			list.lastAccessedAt = Date.now();
 			dirty.value = true;
 			saveToLocalStorage();
+		}
+	}
+
+	function updateListMetadata(
+		syncId: string,
+		activeCount: number,
+		totalCount: number,
+		lastModifiedAt: number,
+	): void {
+		if (!state.value) return;
+		const list = state.value.lists.find((l) => l.syncId === syncId);
+		if (list) {
+			list.activeItemCount = activeCount;
+			list.totalItemCount = totalCount;
+			list.lastModifiedAt = lastModifiedAt;
+			dirty.value = true;
+			saveToLocalStorage();
+
+			// Fire-and-forget sync to backend
+			syncToBackend().catch((e) => {
+				console.warn("App state sync failed:", e);
+			});
 		}
 	}
 
@@ -361,6 +387,7 @@ export const useAppStore = defineStore("app", () => {
 		removeList,
 		updateListName,
 		touchList,
+		updateListMetadata,
 		saveToLocalStorage,
 		syncToBackend,
 		pullFromBackend,

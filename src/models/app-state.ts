@@ -8,6 +8,9 @@ export const ListCredentialsSchema = z.object({
 	lastAccessedAt: z.number(), // Unix timestamp ms, for "recently accessed" sorting
 	createdAt: z.number(), // Unix timestamp ms
 	order: z.number(), // Manual sort order on the dashboard
+	activeItemCount: z.number().default(0),
+	totalItemCount: z.number().default(0),
+	lastModifiedAt: z.number().optional(), // Unix timestamp ms of last item edit
 });
 
 export const AppStateSchema = z.object({

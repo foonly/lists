@@ -29,6 +29,7 @@ const toastTimeout = ref<ReturnType<typeof setTimeout> | null>(null);
 
 // Editing state
 const editingItemId = ref<string | null>(null);
+const newlyAddedItemId = ref<string | null>(null);
 
 const editingItem = computed(() => {
 	if (!editingItemId.value) return null;
@@ -74,10 +75,11 @@ const syncId = computed(() => route.params.syncId as string);
 
 const listName = computed(() => creds.value?.name ?? "List");
 
-// Group active items by their group field
-const groupedActiveItems = computed(() => {
+// Group all items by their group field
+const allGroupedItems = computed(() => {
 	const groups = new Map<string, ListItem[]>();
-	for (const item of listStore.activeItems) {
+	// listStore.items are already sorted by group then order
+	for (const item of listStore.items) {
 		const groupName = item.group.value ?? "";
 		if (!groups.has(groupName)) {
 			groups.set(groupName, []);
@@ -87,31 +89,6 @@ const groupedActiveItems = computed(() => {
 	return groups;
 });
 
-const groupedStaleItems = computed(() => {
-	const groups = new Map<string, ListItem[]>();
-	for (const item of listStore.staleItems) {
-		const groupName = item.group.value ?? "";
-		if (!groups.has(groupName)) {
-			groups.set(groupName, []);
-		}
-		groups.get(groupName)!.push(item);
-	}
-	return groups;
-});
-
-const groupedDoneItems = computed(() => {
-	const groups = new Map<string, ListItem[]>();
-	for (const item of listStore.doneItems) {
-		const groupName = item.group.value ?? "";
-		if (!groups.has(groupName)) {
-			groups.set(groupName, []);
-		}
-		groups.get(groupName)!.push(item);
-	}
-	return groups;
-});
-
-const hasStaleItems = computed(() => listStore.staleItems.length > 0);
 const hasDoneItems = computed(() => listStore.doneItems.length > 0);
 const hasAnyItems = computed(() => listStore.items.length > 0);
 
@@ -197,6 +174,30 @@ async function handleAdd(payload: {
 	});
 }
 
+async function handleAddInline(groupName?: string) {
+	const id = await listStore.addItem("", {
+		group: groupName || undefined,
+	});
+	if (id) {
+		newlyAddedItemId.value = id;
+		nextTick(() => {
+			setTimeout(() => {
+				if (newlyAddedItemId.value === id) {
+					newlyAddedItemId.value = null;
+				}
+			}, 1000);
+		});
+	}
+}
+
+async function handleUpdateText(id: string, text: string) {
+	await listStore.updateItem(id, { text });
+}
+
+async function handleDeleteDone() {
+	await listStore.deleteDoneItems();
+}
+
 // ---------------------------------------------------------------------------
 // Drag & drop — per-group sortable instances
 // ---------------------------------------------------------------------------
@@ -260,7 +261,7 @@ function destroySortables() {
 
 // Re-initialize sortables when the grouped items change (groups added/removed)
 watch(
-	groupedActiveItems,
+	allGroupedItems,
 	() => {
 		nextTick(() => initSortables());
 	},
@@ -395,16 +396,25 @@ watch(
 				<p class="empty-icon">📝</p>
 				<p class="empty-title">No items yet</p>
 				<p class="empty-hint">Add your first item below</p>
+				<button
+					class="btn-primary"
+					style="margin-top: 1rem"
+					@click="handleAddInline('')"
+				>
+					Add first item
+				</button>
 			</div>
 
 			<template v-else>
-				<!-- Active items -->
-				<section v-if="listStore.activeItems.length > 0" class="items-section">
+				<div class="items-list">
 					<template
-						v-for="[groupName, items] in groupedActiveItems"
-						:key="'active-' + groupName"
+						v-for="[groupName, items] in allGroupedItems"
+						:key="groupName"
 					>
-						<GroupHeader v-if="groupName" :name="groupName" />
+						<GroupHeader
+							:name="groupName || 'Ungrouped'"
+							@add="handleAddInline(groupName)"
+						/>
 						<div
 							:ref="(el) => setGroupRef(groupName, el)"
 							class="sortable-group"
@@ -435,112 +445,82 @@ watch(
 								<ListItemRow
 									:item="item"
 									:checksum-match="getChecksumMatch(item)"
+									:auto-focus="newlyAddedItemId === item.id"
 									@toggle-done="handleToggleDone(item.id)"
 									@delete="handleDelete(item.id)"
 									@edit="handleEdit(item.id)"
+									@update-text="(text) => handleUpdateText(item.id, text)"
 								/>
 							</div>
 						</div>
 					</template>
-				</section>
 
-				<!-- Stale items -->
-				<section v-if="hasStaleItems" class="items-section stale-section">
-					<div class="section-label warning-label">
-						<svg
-							width="14"
-							height="14"
-							viewBox="0 0 14 14"
-							fill="none"
-							aria-hidden="true"
-						>
-							<path
-								d="M7 1L13 12H1L7 1Z"
-								stroke="currentColor"
-								stroke-width="1.2"
-								stroke-linejoin="round"
-							/>
-							<path
-								d="M7 5.5V8"
-								stroke="currentColor"
-								stroke-width="1.2"
-								stroke-linecap="round"
-							/>
-							<circle cx="7" cy="10" r="0.5" fill="currentColor" />
-						</svg>
-						Changed since checked off
-					</div>
-					<template
-						v-for="[groupName, items] in groupedStaleItems"
-						:key="'stale-' + groupName"
+					<!-- Placeholder for adding to ungrouped if it's empty -->
+					<div
+						v-if="!allGroupedItems.has('')"
+						class="ungrouped-add-placeholder"
 					>
-						<GroupHeader v-if="groupName" :name="groupName" />
-						<ListItemRow
-							v-for="item in items"
-							:key="item.id"
-							:item="item"
-							:checksum-match="getChecksumMatch(item)"
-							@toggle-done="handleToggleDone(item.id)"
-							@delete="handleDelete(item.id)"
-							@edit="handleEdit(item.id)"
-						/>
-					</template>
-				</section>
+						<GroupHeader name="Items" @add="handleAddInline('')" />
+					</div>
+				</div>
 
-				<!-- Done items (collapsible) -->
-				<section v-if="hasDoneItems" class="items-section done-section">
-					<button class="section-toggle" @click="showDone = !showDone">
+				<!-- Clean up button -->
+				<div v-if="hasDoneItems" class="list-actions">
+					<button
+						class="btn-clean"
+						title="Delete all done items"
+						@click="handleDeleteDone"
+					>
 						<svg
-							class="toggle-chevron"
-							:class="{ open: showDone }"
-							width="14"
-							height="14"
-							viewBox="0 0 14 14"
+							width="16"
+							height="16"
+							viewBox="0 0 16 16"
 							fill="none"
 							aria-hidden="true"
 						>
 							<path
-								d="M5 3L10 7L5 11"
+								d="M3 4H13"
 								stroke="currentColor"
 								stroke-width="1.5"
 								stroke-linecap="round"
-								stroke-linejoin="round"
+							/>
+							<path
+								d="M5 4V3C5 2.44772 5.44772 2 6 2H10C10.5523 2 11 2.44772 11 3V4"
+								stroke="currentColor"
+								stroke-width="1.5"
+								stroke-linecap="round"
+							/>
+							<path
+								d="M4 4L4.5 13C4.5 13.5523 4.94772 14 5.5 14H10.5C11.0523 14 11.5 13.5523 11.5 13L12 4"
+								stroke="currentColor"
+								stroke-width="1.5"
+								stroke-linecap="round"
 							/>
 						</svg>
-						Done ({{ listStore.doneItems.length }})
+						Clear done
 					</button>
-
-					<Transition name="done-expand">
-						<div v-if="showDone" class="done-items-list">
-							<template
-								v-for="[groupName, items] in groupedDoneItems"
-								:key="'done-' + groupName"
-							>
-								<GroupHeader v-if="groupName" :name="groupName" />
-								<ListItemRow
-									v-for="item in items"
-									:key="item.id"
-									:item="item"
-									:checksum-match="getChecksumMatch(item)"
-									@toggle-done="handleToggleDone(item.id)"
-									@delete="handleDelete(item.id)"
-									@edit="handleEdit(item.id)"
-								/>
-							</template>
-						</div>
-					</Transition>
-				</section>
+				</div>
 			</template>
 		</div>
 
-		<!-- Editor at bottom -->
-		<ListItemEditor
-			:groups="listStore.groups"
-			:edit-item="editingItem"
-			@add="handleAdd"
-			@update="handleUpdate"
-			@cancel-edit="handleCancelEdit"
-		/>
+		<!-- Advanced Edit Modal -->
+		<Transition name="modal-fade">
+			<div
+				v-if="editingItemId"
+				class="modal-overlay"
+				@click.self="handleCancelEdit"
+			>
+				<div class="modal-content">
+					<ListItemEditor
+						:groups="listStore.groups"
+						:edit-item="editingItem"
+						@add="handleAdd"
+						@update="handleUpdate"
+						@cancel-edit="handleCancelEdit"
+					/>
+				</div>
+			</div>
+		</Transition>
 
 		<!-- Toast -->
 		<Transition name="toast-fade">
@@ -587,7 +567,7 @@ watch(
 .items-container {
 	flex: 1;
 	min-height: 0;
-	padding: 0 1rem 1rem;
+	padding: 1rem 1rem 1rem;
 	overflow-y: auto;
 	-webkit-overflow-scrolling: touch;
 }
@@ -618,55 +598,40 @@ watch(
 	color: var(--color-text-secondary);
 }
 
-.items-section {
-	margin-bottom: 0.5rem;
-}
-
-.section-label {
+.items-list {
 	display: flex;
-	align-items: center;
-	gap: 0.4rem;
-	padding: 0.5rem 0 0.3rem;
-	font-size: 0.75rem;
-	font-weight: 600;
-	text-transform: uppercase;
-	letter-spacing: 0.03em;
+	flex-direction: column;
 }
 
-.warning-label {
-	color: var(--color-warning);
+.ungrouped-add-placeholder {
+	margin-top: 1rem;
 }
 
-.section-toggle {
+.list-actions {
+	padding: 2rem 0;
 	display: flex;
+	justify-content: center;
+}
+
+.btn-clean {
+	display: inline-flex;
 	align-items: center;
-	gap: 0.35rem;
-	padding: 0.6rem 0;
-	background: none;
-	border: none;
+	gap: 0.5rem;
+	padding: 0.5rem 0.75rem;
+	border: 1px solid var(--color-border);
+	border-radius: 20px;
+	background: var(--color-surface);
 	color: var(--color-text-secondary);
-	font-size: 0.85rem;
-	font-weight: 600;
+	font-size: 0.8rem;
+	font-weight: 500;
 	cursor: pointer;
-	font-family: inherit;
-	-webkit-tap-highlight-color: transparent;
+	transition: all 0.2s;
 }
 
-.section-toggle:hover {
+.btn-clean:hover {
+	background: var(--color-hover);
 	color: var(--color-text);
-}
-
-.toggle-chevron {
-	transition: transform 0.2s ease;
-	flex-shrink: 0;
-}
-
-.toggle-chevron.open {
-	transform: rotate(90deg);
-}
-
-.done-items-list {
-	overflow: hidden;
+	border-color: var(--color-text-secondary);
 }
 
 /* Sortable / drag & drop styles */
@@ -676,7 +641,7 @@ watch(
 
 .sortable-item {
 	display: flex;
-	align-items: flex-start;
+	align-items: center;
 }
 
 .sortable-item :deep(.list-item-row) {
@@ -693,7 +658,7 @@ watch(
 	cursor: grab;
 	color: var(--color-text-secondary);
 	opacity: 0.4;
-	padding-top: 0.7rem;
+	padding: 0.5rem 0;
 	touch-action: none;
 	-webkit-tap-highlight-color: transparent;
 }
@@ -769,5 +734,48 @@ watch(
 .done-expand-leave-to {
 	max-height: 0;
 	opacity: 0;
+}
+/* Modal styles */
+.modal-overlay {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background: rgba(0, 0, 0, 0.4);
+	backdrop-filter: blur(2px);
+	display: flex;
+	align-items: flex-end;
+	justify-content: center;
+	z-index: 1000;
+}
+
+.modal-content {
+	width: 100%;
+	max-width: 500px;
+	background: var(--color-surface);
+	border-radius: 16px 16px 0 0;
+	overflow: hidden;
+	box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.modal-fade-enter-active,
+.modal-fade-leave-active {
+	transition: opacity 0.2s ease;
+}
+
+.modal-fade-enter-from,
+.modal-fade-leave-to {
+	opacity: 0;
+}
+
+.modal-fade-enter-active .modal-content,
+.modal-fade-leave-active .modal-content {
+	transition: transform 0.2s ease-out;
+}
+
+.modal-fade-enter-from .modal-content,
+.modal-fade-leave-to .modal-content {
+	transform: translateY(100%);
 }
 </style>

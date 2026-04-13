@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, reactive } from "vue";
+import { ref, reactive, onMounted } from "vue";
 import { useRouter } from "vue-router";
 import { useAppStore } from "@/stores/app";
 
@@ -7,6 +7,7 @@ const router = useRouter();
 const appStore = useAppStore();
 
 const mode = ref<"new" | "restore">("new");
+const hasPendingImport = ref(false);
 
 const form = reactive({
 	username: "",
@@ -15,6 +16,10 @@ const form = reactive({
 
 const loading = ref(false);
 const error = ref("");
+
+onMounted(() => {
+	hasPendingImport.value = !!localStorage.getItem("pending_import");
+});
 
 async function handleNewSetup() {
 	if (!form.username.trim()) {
@@ -60,6 +65,28 @@ async function handleRestore() {
 		<div class="setup-card">
 			<h1 class="setup-title">Lists</h1>
 			<p class="setup-subtitle">Collaborative shopping lists, offline-first.</p>
+
+			<div v-if="hasPendingImport" class="import-hint">
+				<svg
+					width="18"
+					height="18"
+					viewBox="0 0 24 24"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="2"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+					aria-hidden="true"
+				>
+					<path
+						d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"
+					/>
+					<path
+						d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"
+					/>
+				</svg>
+				<span>You'll be redirected to your shared list after setup.</span>
+			</div>
 
 			<div class="mode-tabs">
 				<button
@@ -163,6 +190,23 @@ async function handleRestore() {
 	font-size: 0.9rem;
 	text-align: center;
 	color: var(--color-text-secondary, #666);
+}
+
+.import-hint {
+	display: flex;
+	align-items: center;
+	gap: 0.75rem;
+	padding: 0.75rem 1rem;
+	background: var(--color-primary-bg, #eef6ff);
+	color: var(--color-primary, #4a90d9);
+	border-radius: 8px;
+	font-size: 0.85rem;
+	font-weight: 500;
+	margin-bottom: 1.5rem;
+}
+
+.import-hint svg {
+	flex-shrink: 0;
 }
 
 .mode-tabs {

@@ -43,11 +43,27 @@ router.beforeEach(async (to) => {
 	}
 
 	if (!appStore.isSetUp && to.name !== "setup") {
+		if (to.name === "import") {
+			const code = (to.params.code as string) || (to.query.c as string);
+			if (code) {
+				localStorage.setItem("pending_import", code);
+			}
+		}
 		return { name: "setup" };
 	}
 
-	if (appStore.isSetUp && to.name === "setup") {
-		return { name: "home" };
+	if (appStore.isSetUp) {
+		const pendingImport = localStorage.getItem("pending_import");
+		if (pendingImport && (to.name === "home" || to.name === "import")) {
+			localStorage.removeItem("pending_import");
+			if (to.name === "home") {
+				return { name: "import", params: { code: pendingImport } };
+			}
+		}
+
+		if (to.name === "setup") {
+			return { name: "home" };
+		}
 	}
 });
 

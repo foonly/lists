@@ -202,6 +202,33 @@ export const useListStore = defineStore("list", () => {
 		await idbSet(idbKey(), JSON.stringify(blob.value));
 	}
 
+	function updateAppMetadata(): void {
+		if (!credentials.value || !blob.value) return;
+		const appStore = useAppStore();
+
+		const activeCount = activeItems.value.length;
+		const totalCount = nonDeletedItems.value.length;
+
+		let lastModifiedAt = 0;
+		for (const item of nonDeletedItems.value) {
+			for (const field of TRACKED_FIELDS) {
+				const fieldData = (item as any)[field];
+				if (fieldData && typeof fieldData.timestamp === "number") {
+					if (fieldData.timestamp > lastModifiedAt) {
+						lastModifiedAt = fieldData.timestamp;
+					}
+				}
+			}
+		}
+
+		appStore.updateListMetadata(
+			credentials.value.syncId,
+			activeCount,
+			totalCount,
+			lastModifiedAt || credentials.value.createdAt,
+		);
+	}
+
 	async function loadFromIndexedDB(): Promise<void> {
 		if (!credentials.value) return;
 
@@ -209,6 +236,7 @@ export const useListStore = defineStore("list", () => {
 		if (raw) {
 			try {
 				blob.value = ListBlobSchema.parse(JSON.parse(raw));
+				updateAppMetadata();
 			} catch {
 				blob.value = null;
 			}
@@ -371,7 +399,7 @@ export const useListStore = defineStore("list", () => {
 			unit?: string;
 			group?: string;
 		},
-	): Promise<void> {
+	): Promise<string | undefined> {
 		if (!blob.value) return;
 
 		const un = getUsername();
@@ -400,7 +428,10 @@ export const useListStore = defineStore("list", () => {
 		syncMeta.value.dirty = true;
 		await updateChecksums();
 		await saveToIndexedDB();
+		updateAppMetadata();
 		scheduleDebouncedSync();
+
+		return item.id;
 	}
 
 	async function updateItem(
@@ -444,6 +475,7 @@ export const useListStore = defineStore("list", () => {
 		syncMeta.value.dirty = true;
 		await updateChecksums();
 		await saveToIndexedDB();
+		updateAppMetadata();
 		scheduleDebouncedSync();
 	}
 
@@ -472,6 +504,7 @@ export const useListStore = defineStore("list", () => {
 		syncMeta.value.dirty = true;
 		await updateChecksums();
 		await saveToIndexedDB();
+		updateAppMetadata();
 		scheduleDebouncedSync();
 	}
 
@@ -537,6 +570,7 @@ export const useListStore = defineStore("list", () => {
 		syncMeta.value.dirty = true;
 		await updateChecksums();
 		await saveToIndexedDB();
+		updateAppMetadata();
 		scheduleDebouncedSync();
 	}
 
@@ -558,7 +592,35 @@ export const useListStore = defineStore("list", () => {
 		syncMeta.value.dirty = true;
 		await updateChecksums();
 		await saveToIndexedDB();
+		updateAppMetadata();
 		scheduleDebouncedSync();
+	}
+
+	async function deleteDoneItems(): Promise<void> {
+		if (!blob.value) return;
+
+		const un = getUsername();
+		const now = Date.now();
+		let changed = false;
+
+		for (const item of blob.value.items) {
+			if (item.done.value !== null && !item.deleted.value) {
+				item.deleted = {
+					value: true,
+					timestamp: now,
+					username: un,
+				};
+				changed = true;
+			}
+		}
+
+		if (changed) {
+			syncMeta.value.dirty = true;
+			await updateChecksums();
+			await saveToIndexedDB();
+			updateAppMetadata();
+			scheduleDebouncedSync();
+		}
 	}
 
 	async function sync(): Promise<void> {
@@ -634,6 +696,7 @@ export const useListStore = defineStore("list", () => {
 
 			await updateChecksums();
 			await saveToIndexedDB();
+			updateAppMetadata();
 		} catch (e) {
 			syncMeta.value.status = "error";
 			syncMeta.value.error = e instanceof Error ? e.message : String(e);
@@ -666,6 +729,7 @@ export const useListStore = defineStore("list", () => {
 		updateItem,
 		toggleDone,
 		toggleDelete,
+		deleteDoneItems,
 		reorderItem,
 		mergeItems,
 		sync,

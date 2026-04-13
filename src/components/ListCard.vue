@@ -13,7 +13,9 @@ const emit = defineEmits<{
 
 const relativeTime = computed(() => {
 	const now = Date.now();
-	const diff = now - props.credentials.lastAccessedAt;
+	const timestamp =
+		props.credentials.lastModifiedAt ?? props.credentials.createdAt;
+	const diff = now - timestamp;
 	const seconds = Math.floor(diff / 1000);
 
 	if (seconds < 10) return "Just now";
@@ -38,7 +40,13 @@ const relativeTime = computed(() => {
 		<button class="list-card-main" @click="emit('click')">
 			<div class="list-card-content">
 				<span class="list-card-name">{{ credentials.name }}</span>
-				<span class="list-card-time">{{ relativeTime }}</span>
+				<div class="list-card-meta">
+					<span class="list-card-counts">
+						{{ credentials.activeItemCount }}/{{ credentials.totalItemCount }}
+					</span>
+					<span class="list-card-dot" aria-hidden="true">•</span>
+					<span class="list-card-time">{{ relativeTime }}</span>
+				</div>
 			</div>
 			<svg
 				class="list-card-arrow"
@@ -173,10 +181,21 @@ const relativeTime = computed(() => {
 	text-overflow: ellipsis;
 }
 
-.list-card-time {
+.list-card-meta {
+	display: flex;
+	align-items: center;
+	gap: 0.4rem;
 	font-size: 0.75rem;
 	color: var(--color-text-secondary, #888888);
 	line-height: 1.2;
+}
+
+.list-card-counts {
+	font-weight: 500;
+}
+
+.list-card-dot {
+	opacity: 0.5;
 }
 
 .list-card-arrow {
