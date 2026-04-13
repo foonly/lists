@@ -1,6 +1,20 @@
 # Changelog
 
-## 1.3.0 (2026-04-12)
+## 1.4.0 (2026-04-13)
+
+#### Features
+
+- list: add inline item add/edit and update list metadata (counts, lastModifiedAt) (d9d4b82)
+
+#### Bug Fixes
+
+- ListItemRow: focus and select text input when editing or on autoFocus (814d740)
+
+#### Styles
+
+- listitemrow: vertically center items and remove top margin/padding tweaks (7c1befc)
+
+## v1.3.0 (2026-04-12)
 
 #### Features
 
