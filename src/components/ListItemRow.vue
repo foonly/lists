@@ -249,7 +249,7 @@ watch(
 <style scoped>
 .list-item-row {
 	display: flex;
-	align-items: flex-start;
+	align-items: center;
 	gap: 0.65rem;
 	padding: 0.65rem 0;
 	border-bottom: 1px solid var(--color-border);
@@ -281,7 +281,6 @@ watch(
 	justify-content: center;
 	width: 2rem;
 	height: 2rem;
-	margin-top: -0.1rem;
 	padding: 0;
 	border: none;
 	border-radius: 6px;
@@ -305,7 +304,6 @@ watch(
 	display: flex;
 	flex-direction: column;
 	gap: 0.1rem;
-	padding-top: 0.2rem;
 }
 
 .text-wrapper {
@@ -359,7 +357,6 @@ watch(
 	justify-content: center;
 	width: 2rem;
 	height: 2rem;
-	margin-top: -0.1rem;
 	padding: 0;
 	border: none;
 	border-radius: 6px;
