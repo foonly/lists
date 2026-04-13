@@ -40,6 +40,9 @@ export const useAppStore = defineStore("app", () => {
 	/** Tracks whether local state has changed since the last successful push. */
 	const dirty = ref(false);
 
+	let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+	const DEBOUNCE_MS = 15_000;
+
 	// ---------------------------------------------------------------------------
 	// Getters
 	// ---------------------------------------------------------------------------
@@ -67,6 +70,15 @@ export const useAppStore = defineStore("app", () => {
 
 	function getClient(): SyncClient {
 		return new SyncClient(API_BASE_URL);
+	}
+
+	function scheduleDebouncedSync() {
+		if (debounceTimer) clearTimeout(debounceTimer);
+		debounceTimer = setTimeout(() => {
+			syncToBackend().catch((e) => {
+				console.warn("App state sync failed:", e);
+			});
+		}, DEBOUNCE_MS);
 	}
 
 	// ---------------------------------------------------------------------------
@@ -129,10 +141,7 @@ export const useAppStore = defineStore("app", () => {
 		saveToLocalStorage();
 		dirty.value = true;
 
-		// Fire-and-forget sync to backend
-		syncToBackend().catch((e) => {
-			console.warn("App state sync failed:", e);
-		});
+		scheduleDebouncedSync();
 	}
 
 	/**
@@ -199,10 +208,7 @@ export const useAppStore = defineStore("app", () => {
 
 		saveToLocalStorage();
 
-		// Fire-and-forget sync to backend
-		syncToBackend().catch((e) => {
-			console.warn("App state sync failed:", e);
-		});
+		scheduleDebouncedSync();
 
 		return creds;
 	}
@@ -235,10 +241,7 @@ export const useAppStore = defineStore("app", () => {
 		dirty.value = true;
 		saveToLocalStorage();
 
-		// Fire-and-forget sync to backend
-		syncToBackend().catch((e) => {
-			console.warn("App state sync failed:", e);
-		});
+		scheduleDebouncedSync();
 
 		return creds;
 	}
@@ -249,10 +252,7 @@ export const useAppStore = defineStore("app", () => {
 		dirty.value = true;
 		saveToLocalStorage();
 
-		// Fire-and-forget sync to backend
-		syncToBackend().catch((e) => {
-			console.warn("App state sync failed:", e);
-		});
+		scheduleDebouncedSync();
 	}
 
 	function updateListName(syncId: string, name: string): void {
@@ -263,10 +263,7 @@ export const useAppStore = defineStore("app", () => {
 			dirty.value = true;
 			saveToLocalStorage();
 
-			// Fire-and-forget sync to backend
-			syncToBackend().catch((e) => {
-				console.warn("App state sync failed:", e);
-			});
+			scheduleDebouncedSync();
 		}
 	}
 
@@ -277,6 +274,7 @@ export const useAppStore = defineStore("app", () => {
 			list.lastAccessedAt = Date.now();
 			dirty.value = true;
 			saveToLocalStorage();
+			scheduleDebouncedSync();
 		}
 	}
 
@@ -295,10 +293,7 @@ export const useAppStore = defineStore("app", () => {
 			dirty.value = true;
 			saveToLocalStorage();
 
-			// Fire-and-forget sync to backend
-			syncToBackend().catch((e) => {
-				console.warn("App state sync failed:", e);
-			});
+			scheduleDebouncedSync();
 		}
 	}
 
@@ -323,6 +318,11 @@ export const useAppStore = defineStore("app", () => {
 	async function syncToBackend(): Promise<void> {
 		if (!state.value || !credentials.value) return;
 		if (!dirty.value) return;
+
+		if (debounceTimer) {
+			clearTimeout(debounceTimer);
+			debounceTimer = null;
+		}
 
 		const client = getClient();
 		await pushBlob(
