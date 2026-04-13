@@ -1,6 +1,12 @@
 # Changelog
 
-### 1.4.1 (2026-04-13)
+### 1.4.2 (2026-04-14)
+
+#### Performance Improvements
+
+- app: debounce backend sync to reduce frequent sync calls (bb6d19b)
+
+### v1.4.1 (2026-04-13)
 
 #### Performance Improvements
 
