@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, nextTick, onMounted } from "vue";
+import { ref, nextTick, watch } from "vue";
 import type { ListItem } from "@/models/list";
 
 const props = defineProps<{
@@ -35,7 +35,12 @@ function startEdit() {
 	if (isDone()) return;
 	localText.value = props.item.text.value;
 	isEditingInline.value = true;
-	nextTick(() => textInput.value?.focus());
+	nextTick(() => {
+		setTimeout(() => {
+			textInput.value?.focus();
+			textInput.value?.select();
+		}, 0);
+	});
 }
 
 function saveEdit() {
@@ -68,11 +73,15 @@ function lastEditor(): string {
 	return latest.username;
 }
 
-onMounted(() => {
-	if (props.autoFocus) {
-		startEdit();
-	}
-});
+watch(
+	() => props.autoFocus,
+	(val) => {
+		if (val) {
+			startEdit();
+		}
+	},
+	{ immediate: true },
+);
 </script>
 
 <template>
@@ -177,6 +186,7 @@ onMounted(() => {
 						ref="textInput"
 						v-model="localText"
 						class="inline-edit-input"
+						placeholder="Item text..."
 						@blur="saveEdit"
 						@keydown.enter="saveEdit"
 						@keydown.esc="cancelEdit"
