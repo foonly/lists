@@ -1,6 +1,12 @@
 # Changelog
 
-### 1.4.2 (2026-04-14)
+## 1.5.0 (2026-06-19)
+
+#### Features
+
+- sync: implement authenticated API requests (139c4d2)
+
+### v1.4.2 (2026-04-14)
 
 #### Performance Improvements
 
