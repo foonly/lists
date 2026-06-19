@@ -107,7 +107,9 @@ export const useListStore = defineStore("list", () => {
 	}
 
 	function getClient(): SyncClient {
-		return new SyncClient(import.meta.env.VITE_API_BASE_URL ?? "/api/v1");
+		return new SyncClient(
+			import.meta.env.VITE_API_BASE_URL ?? "https://blob.foonly.dev",
+		);
 	}
 
 	function idbKey(): string {
@@ -637,6 +639,7 @@ export const useListStore = defineStore("list", () => {
 
 			const remote = await pullBlob(
 				credentials.value.syncId,
+				credentials.value.secret,
 				credentials.value.cryptKey,
 				ListBlobSchema,
 				client,

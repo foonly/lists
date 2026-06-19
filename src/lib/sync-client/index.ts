@@ -14,11 +14,12 @@ import { encrypt, decrypt } from "./crypto";
  */
 export async function pullBlob<T>(
 	syncId: string,
+	secret: string,
 	cryptKey: string,
 	schema: z.ZodType<T>,
 	client: SyncClient,
 ): Promise<{ data: T; timestamp: number } | null> {
-	const response = await client.fetch(syncId);
+	const response = await client.fetch(syncId, secret);
 	if (response === null) {
 		return null;
 	}
@@ -56,7 +57,7 @@ export async function pushBlob<T>(
 	let isNew = false;
 
 	if (!knownExists) {
-		const existing = await client.fetch(syncId);
+		const existing = await client.fetch(syncId, secret);
 		isNew = existing === null;
 	}
 

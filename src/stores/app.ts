@@ -21,7 +21,8 @@ import {
 const APP_STATE_KEY = "lists-app-state";
 const APP_CREDENTIALS_KEY = "lists-app-credentials";
 
-const API_BASE_URL: string = import.meta.env.VITE_API_BASE_URL ?? "/api/v1";
+const API_BASE_URL: string =
+	import.meta.env.VITE_API_BASE_URL ?? "https://blob.foonly.dev";
 
 export interface AppCredentials {
 	syncId: string;
@@ -161,6 +162,7 @@ export const useAppStore = defineStore("app", () => {
 		const client = getClient();
 		const result = await pullBlob(
 			parsed.syncId,
+			parsed.secret,
 			parsed.cryptKey,
 			AppStateSchema,
 			client,
@@ -342,6 +344,7 @@ export const useAppStore = defineStore("app", () => {
 		const client = getClient();
 		const result = await pullBlob(
 			credentials.value.syncId,
+			credentials.value.secret,
 			credentials.value.cryptKey,
 			AppStateSchema,
 			client,

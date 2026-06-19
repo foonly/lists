@@ -159,6 +159,28 @@ export async function hash(data: string): Promise<string> {
 }
 
 /**
+ * Compute the HMAC-SHA256 signature for a sync GET request.
+ *
+ *   signature = HMAC-SHA256(secret, timestamp_string + urlPath)
+ *
+ * The urlPath should include the leading slash and all components, e.g.
+ * "/api/v1/sync/my-id".
+ *
+ * Returns the signature as a hex string.
+ */
+export async function signGet(
+	secret: string,
+	timestamp: number,
+	urlPath: string,
+): Promise<string> {
+	const hmacKey = await importHmacKey(secret);
+	const message = new TextEncoder().encode(String(timestamp) + urlPath);
+	const sig = await crypto.subtle.sign("HMAC", hmacKey, message);
+
+	return bufferToHex(new Uint8Array(sig));
+}
+
+/**
  * Compute the HMAC-SHA256 signature for a sync POST request.
  *
  *   signature = HMAC-SHA256(secret, timestamp_string + sha256_hex(body))

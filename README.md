@@ -15,16 +15,16 @@ A collaborative shopping-list PWA built with Vue 3, Pinia, and TypeScript. Lists
 
 ## Tech Stack
 
-| Package | Purpose |
-|---|---|
-| [Vue 3](https://vuejs.org/) | UI framework |
-| [Pinia](https://pinia.vuejs.org/) | State management |
-| [Vue Router](https://router.vuejs.org/) | Client-side routing |
-| [Zod](https://zod.dev/) | Runtime validation of data blobs and API responses |
-| [Vite](https://vite.dev/) | Build tooling and dev server |
-| [vite-plugin-pwa](https://vite-pwa-org.netlify.app/) | PWA manifest, service worker, offline caching |
-| [nanoid](https://github.com/ai/nanoid) | Compact unique ID generation |
-| [SortableJS](https://sortablejs.github.io/Sortable/) | Drag-and-drop item and group reordering |
+| Package                                              | Purpose                                            |
+| ---------------------------------------------------- | -------------------------------------------------- |
+| [Vue 3](https://vuejs.org/)                          | UI framework                                       |
+| [Pinia](https://pinia.vuejs.org/)                    | State management                                   |
+| [Vue Router](https://router.vuejs.org/)              | Client-side routing                                |
+| [Zod](https://zod.dev/)                              | Runtime validation of data blobs and API responses |
+| [Vite](https://vite.dev/)                            | Build tooling and dev server                       |
+| [vite-plugin-pwa](https://vite-pwa-org.netlify.app/) | PWA manifest, service worker, offline caching      |
+| [nanoid](https://github.com/ai/nanoid)               | Compact unique ID generation                       |
+| [SortableJS](https://sortablejs.github.io/Sortable/) | Drag-and-drop item and group reordering            |
 
 ## Prerequisites
 
@@ -46,9 +46,9 @@ The app will be available at `http://localhost:5173` by default.
 
 ### Environment Variables
 
-| Variable | Default | Description |
-|---|---|---|
-| `VITE_API_BASE_URL` | `/api/v1` | Base URL of the sync backend API. Set this to your backend's address during development (e.g. `http://localhost:8080/api/v1`). |
+| Variable            | Default                   | Description                                                                                                                    |
+| ------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `VITE_API_BASE_URL` | `https://blob.foonly.dev` | Base URL of the sync backend API. Set this to your backend's address during development (e.g. `http://localhost:8080/api/v1`). |
 
 Create a `.env.local` file in the project root to override:
 
@@ -137,14 +137,14 @@ The app communicates with an encrypted blob storage API. The backend is a separa
 
 Key endpoints:
 
-| Method | Path | Description |
-|---|---|---|
-| `GET` | `/sync/:id` | Fetch the latest encrypted blob |
-| `POST` | `/sync/:id` | Upload a new encrypted blob (HMAC-signed) |
-| `GET` | `/sync/:id/history` | List available historical versions |
-| `GET` | `/sync/:id/:timestamp` | Fetch a specific historical version |
+| Method | Path                          | Description                               |
+| ------ | ----------------------------- | ----------------------------------------- |
+| `GET`  | `/api/v1/sync/:id`            | Fetch the latest encrypted blob           |
+| `POST` | `/api/v1/sync/:id`            | Upload a new encrypted blob (HMAC-signed) |
+| `GET`  | `/api/v1/sync/:id/history`    | List available historical versions        |
+| `GET`  | `/api/v1/sync/:id/:timestamp` | Fetch a specific historical version       |
 
-See [`BACKEND.md`](BACKEND.md) for the full API specification, authentication details, rate limits, and deployment instructions.
+See [Foonblob API](https://github.com/foonly/foonblob-api/blob/main/API.md) for the full specification.
 
 ## License
 

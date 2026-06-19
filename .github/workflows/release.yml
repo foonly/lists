@@ -16,7 +16,7 @@ jobs:
       - uses: pnpm/action-setup@v2
       - run: make
         env:
-          VITE_API_BASE: "/api/v1"
+          VITE_API_BASE_URL: "https://blob.foonly.dev"
       - name: Install SSH Key
         uses: shimataro/ssh-key-action@v2
         with:
