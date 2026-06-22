@@ -1,6 +1,17 @@
 # Changelog
 
-## 1.5.0 (2026-06-19)
+## 1.6.0 (2026-06-23)
+
+#### Features
+
+- sync: improve sync reliability and tracking (3d4da78)
+- sync: implement real-time updates via WebSockets (f39cff6)
+
+#### Refactor
+
+- sync: extract timestamp utilities (83c0760)
+
+## v1.5.0 (2026-06-19)
 
 #### Features
 
