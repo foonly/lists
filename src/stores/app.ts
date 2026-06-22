@@ -377,7 +377,10 @@ export const useAppStore = defineStore("app", () => {
 	 * avoids redundant POST requests that would waste bandwidth, consume
 	 * rate-limit budget, and create identical versions on the backend.
 	 */
-	async function syncToBackend(retryCount = 0): Promise<void> {
+	async function syncToBackend(
+		retryCount = 0,
+		knownExists?: boolean,
+	): Promise<void> {
 		if (!state.value || !credentials.value) return;
 		if (!dirty.value) return;
 
@@ -394,6 +397,7 @@ export const useAppStore = defineStore("app", () => {
 				credentials.value.secret,
 				state.value,
 				client,
+				knownExists,
 			);
 			dirty.value = false;
 		} catch (e) {
@@ -427,7 +431,7 @@ export const useAppStore = defineStore("app", () => {
 			// Backend no longer has this record (cleaned up).  Re-register by
 			// marking dirty and pushing the local state back.
 			dirty.value = true;
-			await syncToBackend();
+			await syncToBackend(0, false);
 		}
 	}
 

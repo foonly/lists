@@ -35,15 +35,14 @@ export async function pullBlob<T>(
 /**
  * Encrypt and push a blob to the backend.
  *
- * Registration is handled automatically: a GET is performed first and, if it
- * returns 404 (the sync ID doesn't exist yet), the `secret` is included as
- * `registration_secret` in the POST body so the backend can store it for
- * future HMAC verification.  This matches the flow used by the reference
- * bookmarks client.
+ * Registration is handled automatically: if the blob does not exist yet
+ * (HTTP 404 on GET), the `secret` is included as `registration_secret`
+ * in the POST body so the backend can store it for future HMAC verification.
  *
- * When `knownExists` is `true` the initial GET is skipped — use this when
- * you have already fetched the blob in the same sync cycle and know it
- * exists on the server.
+ * When `knownExists` is provided (true or false) the initial GET is skipped.
+ * Use `true` when you have already confirmed the blob exists on the server,
+ * and `false` when you know it does NOT exist yet (e.g. after a 404 pull).
+ * If omitted (undefined), a GET is performed to check existence.
  */
 export async function pushBlob<T>(
 	syncId: string,
@@ -57,9 +56,11 @@ export async function pushBlob<T>(
 	// If it doesn't we must include the registration_secret.
 	let isNew = false;
 
-	if (!knownExists) {
+	if (knownExists === undefined) {
 		const existing = await client.fetch(syncId, secret);
 		isNew = existing === null;
+	} else {
+		isNew = !knownExists;
 	}
 
 	const json = JSON.stringify(data);

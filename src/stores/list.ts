@@ -707,8 +707,8 @@ export const useListStore = defineStore("list", () => {
 					client,
 				);
 
-				remoteExistsConfirmed.value = true;
 				if (remote) {
+					remoteExistsConfirmed.value = true;
 					syncMeta.value.remoteTimestamp = remote.timestamp;
 					lastKnownRemoteJson = JSON.stringify(remote.data);
 
@@ -719,6 +719,9 @@ export const useListStore = defineStore("list", () => {
 					} else {
 						blob.value = remote.data;
 					}
+				} else {
+					remoteExistsConfirmed.value = false;
+					lastKnownRemoteJson = null;
 				}
 			}
 
@@ -738,8 +741,9 @@ export const useListStore = defineStore("list", () => {
 					credentials.value.secret,
 					blob.value,
 					client,
-					true, // We either just pulled or WS confirmed it exists
+					remoteExistsConfirmed.value,
 				);
+				remoteExistsConfirmed.value = true;
 				// Update our local tracking so we don't push the same thing again
 				lastKnownRemoteJson = JSON.stringify(blob.value);
 			}
