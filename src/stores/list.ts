@@ -1,5 +1,5 @@
 import { defineStore } from "pinia";
-import { ref, computed } from "vue";
+import { ref, computed, watch } from "vue";
 import { nanoid } from "nanoid";
 import { ListBlobSchema, tracked, TRACKED_FIELDS } from "@/models/list";
 import type { ListBlob, ListItem, TrackedFieldName } from "@/models/list";
@@ -8,9 +8,11 @@ import {
 	SyncClient,
 	pullBlob,
 	pushBlob,
+	decrypt,
 	contentChecksum,
+	type ConnectionStatus,
 } from "@/lib/sync-client";
-import { useAppStore } from "./app";
+import { useAppStore, getHub } from "./app";
 
 // ---------------------------------------------------------------------------
 // SyncMeta type
@@ -19,18 +21,22 @@ import { useAppStore } from "./app";
 export interface SyncMeta {
 	status: "idle" | "pulling" | "pushing" | "merging" | "error";
 	lastSyncedAt: number | null;
-	remoteTimestamp: number | null;
+	remoteTimestamp: number;
 	dirty: boolean;
 	error: string | null;
+	isOffline: boolean;
+	hubStatus: ConnectionStatus;
 }
 
 function defaultSyncMeta(): SyncMeta {
 	return {
 		status: "idle",
 		lastSyncedAt: null,
-		remoteTimestamp: null,
+		remoteTimestamp: 0,
 		dirty: false,
 		error: null,
+		isOffline: !navigator.onLine,
+		hubStatus: "closed",
 	};
 }
 
@@ -91,6 +97,34 @@ export const useListStore = defineStore("list", () => {
 	const credentials = ref<ListCredentials | null>(null);
 	const syncMeta = ref<SyncMeta>(defaultSyncMeta());
 	const checksumCache = ref<Map<string, string>>(new Map());
+
+	// Update offline and hub status
+	if (typeof window !== "undefined") {
+		window.addEventListener("online", () => {
+			syncMeta.value.isOffline = false;
+			// Trigger a sync when back online
+			if (syncMeta.value.dirty) {
+				scheduleDebouncedSync();
+			}
+		});
+		window.addEventListener("offline", () => {
+			syncMeta.value.isOffline = true;
+		});
+
+		// Sync hub status
+		const hub = getHub();
+		watch(
+			() => hub.status.value,
+			(status) => {
+				syncMeta.value.hubStatus = status;
+			},
+			{ immediate: true },
+		);
+	}
+	/** Tracks whether we have confirmed the blob exists on the server (via WS or Pull) */
+	const remoteExistsConfirmed = ref(false);
+	/** The JSON string of the last known remote state to avoid redundant pushes */
+	let lastKnownRemoteJson: string | null = null;
 	/** When true, background syncs are skipped to avoid overwriting in-progress edits. */
 	const editing = ref(false);
 
@@ -304,16 +338,10 @@ export const useListStore = defineStore("list", () => {
 	}
 
 	// ---------------------------------------------------------------------------
-	// Sync timing – 15 s debounced push after mutations, configurable poll while open
+	// Sync timing – 5 s debounced push after mutations
 	// ---------------------------------------------------------------------------
 
-	const DEBOUNCE_MS = 15_000;
-
-	function getPollMs(): number {
-		const appStore = useAppStore();
-		const seconds = appStore.settings?.syncIntervalSeconds ?? 30;
-		return Math.max(5, seconds) * 1000;
-	}
+	const DEBOUNCE_MS = 5_000;
 
 	/** Schedule a sync 5 s after the last mutation.  Resets on each call. */
 	function scheduleDebouncedSync(): void {
@@ -322,35 +350,10 @@ export const useListStore = defineStore("list", () => {
 		}
 		debounceTimer = setTimeout(() => {
 			debounceTimer = null;
-			sync()
-				.then(() => resetPollTimer())
-				.catch(() => {
-					/* errors captured in syncMeta */
-				});
-		}, DEBOUNCE_MS);
-	}
-
-	function startPollTimer(): void {
-		stopPollTimer();
-		pollTimer = setInterval(() => {
 			sync().catch(() => {
 				/* errors captured in syncMeta */
 			});
-		}, getPollMs());
-	}
-
-	function stopPollTimer(): void {
-		if (pollTimer !== null) {
-			clearInterval(pollTimer);
-			pollTimer = null;
-		}
-	}
-
-	/** Restart the poll interval so the next tick is a full interval away. */
-	function resetPollTimer(): void {
-		if (pollTimer !== null) {
-			startPollTimer();
-		}
+		}, DEBOUNCE_MS);
 	}
 
 	function stopAllTimers(): void {
@@ -358,7 +361,6 @@ export const useListStore = defineStore("list", () => {
 			clearTimeout(debounceTimer);
 			debounceTimer = null;
 		}
-		stopPollTimer();
 	}
 
 	// ---------------------------------------------------------------------------
@@ -375,21 +377,64 @@ export const useListStore = defineStore("list", () => {
 
 		await updateChecksums();
 
-		// Trigger a background sync, then start the 30 s poll timer
-		sync()
-			.then(() => startPollTimer())
-			.catch(() => {
-				/* errors are captured in syncMeta */
-				startPollTimer();
-			});
+		// Subscribe to real-time updates
+		getHub().subscribe(creds.syncId, creds.secret, async (response) => {
+			await handleRemoteUpdate(response);
+		});
+
+		// Trigger an initial background sync
+		sync().catch(() => {
+			/* errors are captured in syncMeta */
+		});
+	}
+
+	async function handleRemoteUpdate(remote: {
+		data: string;
+		timestamp: number;
+	}): Promise<void> {
+		if (!credentials.value) return;
+
+		try {
+			const decrypted = await decrypt(remote.data, credentials.value.cryptKey);
+			const parsed = JSON.parse(decrypted);
+			const remoteData = ListBlobSchema.parse(parsed);
+
+			remoteExistsConfirmed.value = true;
+			lastKnownRemoteJson = JSON.stringify(remoteData);
+			syncMeta.value.remoteTimestamp = remote.timestamp;
+
+			if (blob.value && blob.value.items.length > 0) {
+				syncMeta.value.status = "merging";
+				const merged = mergeItems(blob.value.items, remoteData.items);
+				blob.value = { version: 1, items: merged };
+			} else {
+				blob.value = remoteData;
+			}
+
+			syncMeta.value.status = "idle";
+			syncMeta.value.lastSyncedAt = Date.now();
+			syncMeta.value.dirty = false;
+
+			await updateChecksums();
+			await saveToIndexedDB();
+			updateAppMetadata();
+		} catch (e) {
+			syncMeta.value.status = "error";
+			syncMeta.value.error = e instanceof Error ? e.message : String(e);
+		}
 	}
 
 	async function closeList(): Promise<void> {
+		if (credentials.value) {
+			getHub().unsubscribe(credentials.value.syncId);
+		}
 		stopAllTimers();
 		await saveToIndexedDB();
 
 		blob.value = null;
 		credentials.value = null;
+		remoteExistsConfirmed.value = false;
+		lastKnownRemoteJson = null;
 		checksumCache.value = new Map();
 		syncMeta.value = defaultSyncMeta();
 	}
@@ -625,45 +670,44 @@ export const useListStore = defineStore("list", () => {
 		}
 	}
 
-	async function sync(): Promise<void> {
+	async function sync(retryCount = 0): Promise<void> {
 		if (!credentials.value) return;
 		if (editing.value) return;
+		if (!navigator.onLine) {
+			syncMeta.value.status = "idle";
+			return;
+		}
 
 		const client = getClient();
 		if (!client) return;
 
 		try {
-			// --- Pull --------------------------------------------------------
-			syncMeta.value.status = "pulling";
-			syncMeta.value.error = null;
+			const localJson = JSON.stringify(blob.value);
 
-			const remote = await pullBlob(
-				credentials.value.syncId,
-				credentials.value.secret,
-				credentials.value.cryptKey,
-				ListBlobSchema,
-				client,
-			);
+			// If we haven't confirmed existence yet, we MUST pull to see if we
+			// need to include the registration_secret in the subsequent push.
+			if (!remoteExistsConfirmed.value) {
+				syncMeta.value.status = "pulling";
+				const remote = await pullBlob(
+					credentials.value.syncId,
+					credentials.value.secret,
+					credentials.value.cryptKey,
+					ListBlobSchema,
+					client,
+				);
 
-			// Track whether the blob already exists on the backend so we can
-			// skip the redundant GET inside pushBlob and handle registration
-			// correctly (include registration_secret when the ID is new).
-			const remoteExists = remote !== null;
+				remoteExistsConfirmed.value = true;
+				if (remote) {
+					syncMeta.value.remoteTimestamp = remote.timestamp;
+					lastKnownRemoteJson = JSON.stringify(remote.data);
 
-			// Snapshot the remote items as JSON so we can compare after merge
-			// to detect whether anything actually changed.
-			const remoteJson = remote ? JSON.stringify(remote.data) : null;
-
-			// --- Merge -------------------------------------------------------
-			if (remote) {
-				syncMeta.value.remoteTimestamp = remote.timestamp;
-
-				if (blob.value && blob.value.items.length > 0) {
-					syncMeta.value.status = "merging";
-					const merged = mergeItems(blob.value.items, remote.data.items);
-					blob.value = { version: 1, items: merged };
-				} else {
-					blob.value = remote.data;
+					if (blob.value && blob.value.items.length > 0) {
+						syncMeta.value.status = "merging";
+						const merged = mergeItems(blob.value.items, remote.data.items);
+						blob.value = { version: 1, items: merged };
+					} else {
+						blob.value = remote.data;
+					}
 				}
 			}
 
@@ -673,12 +717,7 @@ export const useListStore = defineStore("list", () => {
 			}
 
 			// --- Push (only if something changed) ----------------------------
-			// Compare the current blob against what the remote had.  If they
-			// are identical there is nothing to upload — skip the POST to save
-			// bandwidth, reduce rate-limit pressure, and avoid creating
-			// redundant versions on the backend.
-			const localJson = JSON.stringify(blob.value);
-			const needsPush = !remoteExists || localJson !== remoteJson;
+			const needsPush = localJson !== lastKnownRemoteJson;
 
 			if (needsPush) {
 				syncMeta.value.status = "pushing";
@@ -688,8 +727,10 @@ export const useListStore = defineStore("list", () => {
 					credentials.value.secret,
 					blob.value,
 					client,
-					remoteExists,
+					true, // We either just pulled or WS confirmed it exists
 				);
+				// Update our local tracking so we don't push the same thing again
+				lastKnownRemoteJson = JSON.stringify(blob.value);
 			}
 
 			// --- Done --------------------------------------------------------
@@ -703,6 +744,12 @@ export const useListStore = defineStore("list", () => {
 		} catch (e) {
 			syncMeta.value.status = "error";
 			syncMeta.value.error = e instanceof Error ? e.message : String(e);
+
+			// Exponential backoff retry for non-4xx errors
+			if (retryCount < 5) {
+				const delay = Math.pow(2, retryCount) * 1000;
+				setTimeout(() => sync(retryCount + 1), delay);
+			}
 		}
 	}
 

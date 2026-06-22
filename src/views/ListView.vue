@@ -318,6 +318,8 @@ watch(
 					:status="listStore.syncMeta.status"
 					:last-synced-at="listStore.syncMeta.lastSyncedAt"
 					:error="listStore.syncMeta.error"
+					:is-offline="listStore.syncMeta.isOffline"
+					:hub-status="listStore.syncMeta.hubStatus"
 				/>
 				<button class="btn-icon" aria-label="Sync" @click="handleSync">
 					<svg

@@ -1,4 +1,5 @@
 export { SyncClient } from "./client";
+export { SyncHub, type UpdateHandler, type ConnectionStatus } from "./hub";
 export * from "./crypto";
 export * from "./types";
 export * from "./schemas";

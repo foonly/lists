@@ -92,7 +92,7 @@ Retrieves a specific historical blob by its timestamp.
 
 - **Max Payload Size**: 1MB per request.
 - **Rate Limiting**:
-  - **POST**: 5 requests per minute per `Sync ID`.
+  - **POST**: 15 requests per minute per `Sync ID`.
   - **GET**: 30 requests per minute per `Sync ID`.
 
 ### Persistence Requirements

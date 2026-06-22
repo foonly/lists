@@ -11,8 +11,10 @@ import {
 import { ListBlobSchema, type ListBlob } from "@/models/list";
 import {
 	SyncClient,
+	SyncHub,
 	pullBlob,
 	pushBlob,
+	decrypt,
 	generateSyncId,
 	generateCryptKey,
 	generateSecret,
@@ -23,6 +25,15 @@ const APP_CREDENTIALS_KEY = "lists-app-credentials";
 
 const API_BASE_URL: string =
 	import.meta.env.VITE_API_BASE_URL ?? "https://blob.foonly.dev";
+
+let hub: SyncHub | null = null;
+
+export function getHub(): SyncHub {
+	if (!hub) {
+		hub = new SyncHub(API_BASE_URL);
+	}
+	return hub;
+}
 
 export interface AppCredentials {
 	syncId: string;
@@ -42,7 +53,7 @@ export const useAppStore = defineStore("app", () => {
 	const dirty = ref(false);
 
 	let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-	const DEBOUNCE_MS = 15_000;
+	const DEBOUNCE_MS = 5_000;
 
 	// ---------------------------------------------------------------------------
 	// Getters
@@ -111,11 +122,51 @@ export const useAppStore = defineStore("app", () => {
 
 		initialized.value = true;
 
+		if (typeof window !== "undefined") {
+			window.addEventListener("online", () => {
+				// Trigger a sync when back online
+				if (dirty.value) {
+					scheduleDebouncedSync();
+				}
+			});
+		}
+
+		// Subscribe to real-time updates if we have credentials
+		if (credentials.value) {
+			getHub().subscribe(
+				credentials.value.syncId,
+				credentials.value.secret,
+				async (response) => {
+					await handleRemoteUpdate(response);
+				},
+			);
+		}
+
 		// Background pull — don't block init, don't throw to the caller
 		if (credentials.value && state.value) {
 			pullFromBackend().catch((e) => {
 				console.warn("Background pull on init failed:", e);
 			});
+		}
+	}
+
+	async function handleRemoteUpdate(remote: {
+		data: string;
+		timestamp: number;
+	}): Promise<void> {
+		if (!credentials.value) return;
+
+		try {
+			const decrypted = await decrypt(remote.data, credentials.value.cryptKey);
+			const parsed = JSON.parse(decrypted);
+			const remoteData = AppStateSchema.parse(parsed);
+
+			// Simple replace — app state is single-user, no field-level merge needed
+			state.value = remoteData;
+			dirty.value = false;
+			saveToLocalStorage();
+		} catch (e) {
+			console.warn("App state remote update failed:", e);
 		}
 	}
 
@@ -142,6 +193,10 @@ export const useAppStore = defineStore("app", () => {
 		saveToLocalStorage();
 		dirty.value = true;
 
+		getHub().subscribe(syncId, secret, async (response) => {
+			await handleRemoteUpdate(response);
+		});
+
 		scheduleDebouncedSync();
 	}
 
@@ -158,6 +213,10 @@ export const useAppStore = defineStore("app", () => {
 
 		credentials.value = parsed;
 		saveToLocalStorage();
+
+		getHub().subscribe(parsed.syncId, parsed.secret, async (response) => {
+			await handleRemoteUpdate(response);
+		});
 
 		const client = getClient();
 		const result = await pullBlob(
@@ -317,25 +376,33 @@ export const useAppStore = defineStore("app", () => {
 	 * avoids redundant POST requests that would waste bandwidth, consume
 	 * rate-limit budget, and create identical versions on the backend.
 	 */
-	async function syncToBackend(): Promise<void> {
+	async function syncToBackend(retryCount = 0): Promise<void> {
 		if (!state.value || !credentials.value) return;
 		if (!dirty.value) return;
 
-		if (debounceTimer) {
+		if (debounceTimer && retryCount === 0) {
 			clearTimeout(debounceTimer);
 			debounceTimer = null;
 		}
 
 		const client = getClient();
-		await pushBlob(
-			credentials.value.syncId,
-			credentials.value.cryptKey,
-			credentials.value.secret,
-			state.value,
-			client,
-		);
-
-		dirty.value = false;
+		try {
+			await pushBlob(
+				credentials.value.syncId,
+				credentials.value.cryptKey,
+				credentials.value.secret,
+				state.value,
+				client,
+			);
+			dirty.value = false;
+		} catch (e) {
+			console.warn("App state sync failed:", e);
+			// Retry with exponential backoff if online
+			if (navigator.onLine && retryCount < 5) {
+				const delay = Math.pow(2, retryCount) * 1000;
+				setTimeout(() => syncToBackend(retryCount + 1), delay);
+			}
+		}
 	}
 
 	async function pullFromBackend(): Promise<void> {

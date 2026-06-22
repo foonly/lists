@@ -159,6 +159,27 @@ export async function hash(data: string): Promise<string> {
 }
 
 /**
+ * Compute the HMAC-SHA256 signature for a WebSocket subscribe message.
+ *
+ *   signature = HMAC-SHA256(secret, timestamp_string + "subscribe" + syncId)
+ *
+ * Returns the signature as a hex string.
+ */
+export async function signSubscribe(
+	secret: string,
+	timestamp: number,
+	syncId: string,
+): Promise<string> {
+	const hmacKey = await importHmacKey(secret);
+	const message = new TextEncoder().encode(
+		String(timestamp) + "subscribe" + syncId,
+	);
+	const sig = await crypto.subtle.sign("HMAC", hmacKey, message);
+
+	return bufferToHex(new Uint8Array(sig));
+}
+
+/**
  * Compute the HMAC-SHA256 signature for a sync GET request.
  *
  *   signature = HMAC-SHA256(secret, timestamp_string + urlPath)

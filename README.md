@@ -117,7 +117,7 @@ Every mutable field on a list item is a **tracked field** carrying a value, a ti
 ### Sync
 
 - When a list is open, changes are synced to the backend with a **5-second debounce** after any mutation.
-- A **30-second polling interval** checks for remote changes while a list is open. The debounced sync resets this timer so the two don't overlap.
+- Real-time updates are received via **WebSockets** while a list is open, ensuring concurrent changes from other users are merged instantly.
 - All changes are persisted to IndexedDB immediately, so nothing is lost if the page is closed before sync completes.
 - The merge algorithm operates at the field level: for each item present in both local and remote, every tracked field is resolved independently by timestamp. Equal timestamps prefer the remote value.
 
