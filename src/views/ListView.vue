@@ -150,7 +150,7 @@ function handleNameKeydown(e: KeyboardEvent) {
 }
 
 async function handleSync() {
-	await listStore.sync();
+	await listStore.sync(0, true);
 }
 
 async function handleToggleDone(id: string) {
@@ -321,7 +321,12 @@ watch(
 					:is-offline="listStore.syncMeta.isOffline"
 					:hub-status="listStore.syncMeta.hubStatus"
 				/>
-				<button class="btn-icon" aria-label="Sync" @click="handleSync">
+				<button
+					class="btn-icon sync-btn"
+					:class="{ spinning: listStore.syncMeta.status !== 'idle' }"
+					aria-label="Sync"
+					@click="handleSync"
+				>
 					<svg
 						width="18"
 						height="18"
@@ -737,6 +742,19 @@ watch(
 	max-height: 0;
 	opacity: 0;
 }
+.sync-btn.spinning svg {
+	animation: rotate 1s linear infinite;
+}
+
+@keyframes rotate {
+	from {
+		transform: rotate(0deg);
+	}
+	to {
+		transform: rotate(360deg);
+	}
+}
+
 /* Modal styles */
 .modal-overlay {
 	position: fixed;

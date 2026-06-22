@@ -1,17 +1,7 @@
 import { SyncResponseSchema, HistoryResponseSchema } from "./schemas";
 import { sign, signGet } from "./crypto";
+import { getNextTimestamp, updateLastTimestamp } from "./utils";
 import type { SyncResponse, HistoryEntry } from "./types";
-
-let lastTimestamp = 0;
-
-function getNextTimestamp(): number {
-	let ts = Math.floor(Date.now() / 1000);
-	if (ts <= lastTimestamp) {
-		ts = lastTimestamp + 1;
-	}
-	lastTimestamp = ts;
-	return ts;
-}
 
 export class SyncClient {
 	private baseUrl: string;
@@ -45,9 +35,7 @@ export class SyncClient {
 
 		const json = await res.json();
 		const result = SyncResponseSchema.parse(json);
-		if (result.timestamp > lastTimestamp) {
-			lastTimestamp = result.timestamp;
-		}
+		updateLastTimestamp(result.timestamp);
 		return result;
 	}
 
@@ -144,9 +132,7 @@ export class SyncClient {
 
 		const json = await res.json();
 		const result = SyncResponseSchema.parse(json);
-		if (result.timestamp > lastTimestamp) {
-			lastTimestamp = result.timestamp;
-		}
+		updateLastTimestamp(result.timestamp);
 		return result;
 	}
 }

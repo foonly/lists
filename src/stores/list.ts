@@ -670,9 +670,15 @@ export const useListStore = defineStore("list", () => {
 		}
 	}
 
-	async function sync(retryCount = 0): Promise<void> {
+	async function sync(retryCount = 0, force = false): Promise<void> {
 		if (!credentials.value) return;
 		if (editing.value) return;
+
+		if (debounceTimer && retryCount === 0) {
+			clearTimeout(debounceTimer);
+			debounceTimer = null;
+		}
+
 		if (!navigator.onLine) {
 			syncMeta.value.status = "idle";
 			return;
@@ -684,9 +690,9 @@ export const useListStore = defineStore("list", () => {
 		try {
 			const localJson = JSON.stringify(blob.value);
 
-			// If we haven't confirmed existence yet, we MUST pull to see if we
-			// need to include the registration_secret in the subsequent push.
-			if (!remoteExistsConfirmed.value) {
+			// If we haven't confirmed existence yet, or we're forcing a refresh,
+			// we MUST pull to see what's on the server.
+			if (!remoteExistsConfirmed.value || force) {
 				syncMeta.value.status = "pulling";
 				const remote = await pullBlob(
 					credentials.value.syncId,

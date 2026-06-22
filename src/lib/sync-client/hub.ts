@@ -1,5 +1,6 @@
 import { ref, type Ref } from "vue";
 import { signSubscribe } from "./crypto";
+import { getNextTimestamp, updateLastTimestamp } from "./utils";
 import { SyncResponseSchema } from "./schemas";
 import type { SyncResponse } from "./types";
 
@@ -73,6 +74,7 @@ export class SyncHub {
 					const sub = this.subscriptions.get(msg.id);
 					if (sub) {
 						const response = SyncResponseSchema.parse(msg);
+						updateLastTimestamp(response.timestamp);
 						sub.handler(response);
 					}
 				} else if (msg.type === "error") {
@@ -104,7 +106,7 @@ export class SyncHub {
 	}
 
 	private async sendSubscribe(syncId: string, secret: string) {
-		const timestamp = Math.floor(Date.now() / 1000);
+		const timestamp = getNextTimestamp();
 		const signature = await signSubscribe(secret, timestamp, syncId);
 		this.ws?.send(
 			JSON.stringify({
