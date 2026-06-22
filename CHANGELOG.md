@@ -1,6 +1,12 @@
 # Changelog
 
-## 1.6.0 (2026-06-23)
+## 1.7.0 (2026-06-23)
+
+#### Features
+
+- sync: improve pushBlob existence check logic (c9ebe7a)
+
+## v1.6.0 (2026-06-23)
 
 #### Features
 
