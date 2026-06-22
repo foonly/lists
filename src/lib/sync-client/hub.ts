@@ -28,8 +28,16 @@ export class SyncHub {
 
 		if (typeof window !== "undefined") {
 			window.addEventListener("online", () => {
-				if (this.shouldReconnect && !this.ws) {
-					console.log("SyncHub: Browser back online, reconnecting...");
+				if (this.shouldReconnect) {
+					console.log("SyncHub: Browser back online, forcing reconnect...");
+					if (this.reconnectTimer) {
+						clearTimeout(this.reconnectTimer);
+						this.reconnectTimer = null;
+					}
+					if (this.ws) {
+						this.ws.close();
+						this.ws = null;
+					}
 					this.connect();
 				}
 			});
@@ -60,9 +68,10 @@ export class SyncHub {
 		this.ws = new WebSocket(wsUrl);
 
 		this.ws.onopen = async () => {
-			console.log("SyncHub: Connected to WebSocket");
+			console.log("SyncHub: WebSocket connection established");
 			this.status.value = "open";
 			for (const [syncId, { secret }] of this.subscriptions) {
+				console.log(`SyncHub: Subscribing to ${syncId}`);
 				await this.sendSubscribe(syncId, secret);
 			}
 		};
@@ -73,12 +82,16 @@ export class SyncHub {
 				if (msg.type === "update") {
 					const sub = this.subscriptions.get(msg.id);
 					if (sub) {
+						console.log(`SyncHub: Received update for ${msg.id}`);
 						const response = SyncResponseSchema.parse(msg);
 						updateLastTimestamp(response.timestamp);
 						sub.handler(response);
 					}
 				} else if (msg.type === "error") {
-					console.error("SyncHub error:", msg.message);
+					console.error("SyncHub server-side error:", msg.message);
+					if (msg.code === 401) {
+						this.status.value = "error";
+					}
 				}
 			} catch (e) {
 				console.error("SyncHub: Failed to parse message", e);
@@ -86,9 +99,15 @@ export class SyncHub {
 		};
 
 		this.ws.onclose = () => {
+			const wasConnecting = this.status.value === "connecting";
 			this.ws = null;
 			if (this.shouldReconnect) {
-				this.status.value = "closed";
+				// If we were connecting and it closed, it's essentially an error
+				if (wasConnecting) {
+					this.status.value = "error";
+				} else {
+					this.status.value = "closed";
+				}
 				console.log("SyncHub: Disconnected, reconnecting in 5s...");
 				this.reconnectTimer = setTimeout(() => {
 					this.reconnectTimer = null;

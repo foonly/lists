@@ -308,6 +308,8 @@ export const useListStore = defineStore("list", () => {
 				// Clone local as the base, then overlay winning fields.
 				const mergedItem: ListItem = {
 					id: localItem.id,
+					createdBy: localItem.createdBy,
+					createdAt: localItem.createdAt,
 					text: { ...localItem.text },
 					quantity: { ...localItem.quantity },
 					unit: { ...localItem.unit },
@@ -341,7 +343,7 @@ export const useListStore = defineStore("list", () => {
 	// Sync timing – 5 s debounced push after mutations
 	// ---------------------------------------------------------------------------
 
-	const DEBOUNCE_MS = 5_000;
+	const DEBOUNCE_MS = 2_000;
 
 	/** Schedule a sync 5 s after the last mutation.  Resets on each call. */
 	function scheduleDebouncedSync(): void {
@@ -377,14 +379,15 @@ export const useListStore = defineStore("list", () => {
 
 		await updateChecksums();
 
+		// Trigger an initial background sync first so its timestamp is
+		// consumed before we subscribe to real-time updates.
+		await sync().catch(() => {
+			/* errors are captured in syncMeta */
+		});
+
 		// Subscribe to real-time updates
 		getHub().subscribe(creds.syncId, creds.secret, async (response) => {
 			await handleRemoteUpdate(response);
-		});
-
-		// Trigger an initial background sync
-		sync().catch(() => {
-			/* errors are captured in syncMeta */
 		});
 	}
 
@@ -462,6 +465,8 @@ export const useListStore = defineStore("list", () => {
 
 		const item: ListItem = {
 			id: nanoid(),
+			createdBy: un,
+			createdAt: now,
 			text: tracked(text, un, now),
 			quantity: tracked(opts?.quantity ?? null, un, now),
 			unit: tracked(opts?.unit ?? null, un, now),

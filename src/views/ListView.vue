@@ -86,7 +86,17 @@ const allGroupedItems = computed(() => {
 		}
 		groups.get(groupName)!.push(item);
 	}
-	return groups;
+
+	// Move ungrouped ("") to the end of the entry list
+	const entries = Array.from(groups.entries());
+	const ungroupedIdx = entries.findIndex(([name]) => name === "");
+
+	if (ungroupedIdx !== -1) {
+		const [ungrouped] = entries.splice(ungroupedIdx, 1);
+		entries.push(ungrouped);
+	}
+
+	return entries;
 });
 
 const hasDoneItems = computed(() => listStore.doneItems.length > 0);
@@ -464,10 +474,10 @@ watch(
 
 					<!-- Placeholder for adding to ungrouped if it's empty -->
 					<div
-						v-if="!allGroupedItems.has('')"
+						v-if="!allGroupedItems.some(([name]) => name === '')"
 						class="ungrouped-add-placeholder"
 					>
-						<GroupHeader name="Items" @add="handleAddInline('')" />
+						<GroupHeader name="Ungrouped" @add="handleAddInline('')" />
 					</div>
 				</div>
 

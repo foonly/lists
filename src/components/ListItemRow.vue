@@ -56,21 +56,30 @@ function cancelEdit() {
 	isEditingInline.value = false;
 }
 
-function lastEditor(): string {
-	let latest = props.item.text;
-	const fields = [
+function getAttribution(): string {
+	const creator = props.item.createdBy;
+
+	// Check content fields for the latest modification by someone other than the creator
+	const contentFields = [
 		props.item.text,
 		props.item.quantity,
 		props.item.unit,
-		props.item.group,
-		props.item.done,
 	] as const;
-	for (const f of fields) {
-		if (f.timestamp > latest.timestamp) {
-			latest = f as typeof latest;
+
+	let latestModifier: { username: string; timestamp: number } | null = null;
+
+	for (const f of contentFields) {
+		if (f.username !== creator) {
+			if (!latestModifier || f.timestamp > latestModifier.timestamp) {
+				latestModifier = { username: f.username, timestamp: f.timestamp };
+			}
 		}
 	}
-	return latest.username;
+
+	if (latestModifier) {
+		return `${creator}, changed by ${latestModifier.username}`;
+	}
+	return creator;
 }
 
 watch(
@@ -206,7 +215,7 @@ watch(
 				</template>
 			</div>
 			<span v-if="isStale()" class="stale-hint">Changed since checked off</span>
-			<span class="item-meta">{{ lastEditor() }}</span>
+			<span class="item-meta">{{ getAttribution() }}</span>
 		</div>
 
 		<button class="edit-btn" aria-label="Advanced edit" @click="emit('edit')">

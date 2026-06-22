@@ -31,6 +31,8 @@ export function tracked<T>(
 
 export const ListItemSchema = z.object({
 	id: z.string(), // Immutable, not tracked
+	createdBy: z.string().default("Unknown"), // Who created the item
+	createdAt: z.number().default(() => Date.now()), // When it was created
 
 	// Content fields — independently mergeable
 	text: TrackedFieldSchema(z.string()),

@@ -17,9 +17,9 @@ const statusColor = computed(() => {
 
 	switch (props.status) {
 		case "idle":
-			return props.hubStatus === "open"
-				? "var(--color-success)"
-				: "var(--color-warning)";
+			if (props.hubStatus === "open") return "var(--color-success)";
+			if (props.hubStatus === "connecting") return "var(--color-warning)";
+			return "var(--color-text-secondary)";
 		default:
 			return "var(--color-warning)";
 	}
@@ -36,7 +36,10 @@ const statusLabel = computed(() => {
 
 	switch (props.status) {
 		case "idle":
-			return props.hubStatus === "open" ? "Synced" : "Syncing…";
+			if (props.hubStatus === "open") return "Synced";
+			if (props.hubStatus === "connecting") return "Connecting…";
+			if (props.hubStatus === "error") return "Hub error";
+			return "Offline";
 		case "pulling":
 			return "Pulling…";
 		case "pushing":

@@ -53,7 +53,7 @@ export const useAppStore = defineStore("app", () => {
 	const dirty = ref(false);
 
 	let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-	const DEBOUNCE_MS = 5_000;
+	const DEBOUNCE_MS = 2_000;
 
 	// ---------------------------------------------------------------------------
 	// Getters
@@ -131,6 +131,14 @@ export const useAppStore = defineStore("app", () => {
 			});
 		}
 
+		// Background pull first — ensure this finishes so its timestamp is consumed
+		// by the server before we start the WebSocket subscription.
+		if (credentials.value && state.value) {
+			await pullFromBackend().catch((e) => {
+				console.warn("Background pull on init failed:", e);
+			});
+		}
+
 		// Subscribe to real-time updates if we have credentials
 		if (credentials.value) {
 			getHub().subscribe(
@@ -140,13 +148,6 @@ export const useAppStore = defineStore("app", () => {
 					await handleRemoteUpdate(response);
 				},
 			);
-		}
-
-		// Background pull — don't block init, don't throw to the caller
-		if (credentials.value && state.value) {
-			pullFromBackend().catch((e) => {
-				console.warn("Background pull on init failed:", e);
-			});
 		}
 	}
 
