@@ -36,7 +36,10 @@ function defaultSyncMeta(): SyncMeta {
 		dirty: false,
 		error: null,
 		isOffline: !navigator.onLine,
-		hubStatus: "closed",
+		// The hub connection is shared by all lists and outlives this metadata,
+		// which is reset whenever a list is closed. Start from its real status:
+		// the watcher below only fires when that status changes.
+		hubStatus: getHub().status.value,
 	};
 }
 

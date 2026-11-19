@@ -16,6 +16,9 @@ export class SyncHub {
 	>();
 	private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 	private shouldReconnect = true;
+	/** Failed subscribe attempts per sync ID since the last successful update. */
+	private retries = new Map<string, number>();
+	private static readonly MAX_SUBSCRIBE_RETRIES = 5;
 
 	/** Observable connection status */
 	public status: Ref<ConnectionStatus> = ref("closed");
@@ -70,6 +73,7 @@ export class SyncHub {
 		this.ws.onopen = async () => {
 			console.log("SyncHub: WebSocket connection established");
 			this.status.value = "open";
+			this.retries.clear();
 			for (const [syncId, { secret }] of this.subscriptions) {
 				console.log(`SyncHub: Subscribing to ${syncId}`);
 				await this.sendSubscribe(syncId, secret);
@@ -82,6 +86,10 @@ export class SyncHub {
 				if (msg.type === "update") {
 					const sub = this.subscriptions.get(msg.id);
 					if (sub) {
+						this.retries.delete(msg.id);
+						if (this.status.value === "error") {
+							this.status.value = "open";
+						}
 						console.log(`SyncHub: Received update for ${msg.id}`);
 						const response = SyncResponseSchema.parse(msg);
 						updateLastTimestamp(response.timestamp);
@@ -89,6 +97,17 @@ export class SyncHub {
 					}
 				} else if (msg.type === "error") {
 					console.error("SyncHub server-side error:", msg.message);
+					// The server names the sync ID a subscribe error belongs to.
+					// 404: the blob is not uploaded yet (e.g. right after setup).
+					// 401: a replayed signature, e.g. another device made the
+					// identical request in the same second.
+					if (
+						msg.id &&
+						(msg.code === 401 || msg.code === 404) &&
+						this.retrySubscribe(msg.id)
+					) {
+						return;
+					}
 					if (msg.code === 401) {
 						this.status.value = "error";
 					}
@@ -122,6 +141,23 @@ export class SyncHub {
 			console.error("SyncHub: WebSocket error", err);
 			this.status.value = "error";
 		};
+	}
+
+	/** Schedules another subscribe attempt with backoff. Returns false when giving up. */
+	private retrySubscribe(syncId: string): boolean {
+		const sub = this.subscriptions.get(syncId);
+		const attempt = (this.retries.get(syncId) ?? 0) + 1;
+		if (!sub || attempt > SyncHub.MAX_SUBSCRIBE_RETRIES) {
+			return false;
+		}
+		this.retries.set(syncId, attempt);
+		setTimeout(() => {
+			const current = this.subscriptions.get(syncId);
+			if (current && this.ws?.readyState === WebSocket.OPEN) {
+				this.sendSubscribe(syncId, current.secret);
+			}
+		}, 2000 * attempt);
+		return true;
 	}
 
 	private async sendSubscribe(syncId: string, secret: string) {
