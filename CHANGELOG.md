@@ -1,5 +1,11 @@
 # Changelog
 
+### 1.7.2 (2026-11-19)
+
+#### Bug Fixes
+
+- sync: keep hub status when switching lists and retry failed subscriptions (69d6322)
+
 ### 1.7.1 (2026-11-19)
 
 #### Continuous Integration
