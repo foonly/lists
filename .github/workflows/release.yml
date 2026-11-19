@@ -5,15 +5,20 @@ on:
     tags:
       - "v*"
 
+concurrency: production
+
 jobs:
-  build:
+  deploy:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
-      - uses: pnpm/action-setup@v2
+        with:
+          node-version: lts/*
+          cache: pnpm
       - run: make
         env:
           VITE_API_BASE_URL: "https://blob.foonly.dev"
@@ -24,4 +29,6 @@ jobs:
           name: id_ed25519
           known_hosts: ${{ vars.KNOWN_HOSTS }}
       - name: Deploy Files
-        run: rsync -rlci --delete dist/* ${{ vars.DEPLOY_USER }}@${{ vars.DEPLOY_HOST }}:${{ vars.DEPLOY_PATH }}
+        # The key is restricted on the server to rsync into this site's web root
+        # (rrsync), so the destination path is relative to it.
+        run: rsync -rlci --delete dist/ "${{ vars.DEPLOY_USER }}@${{ vars.DEPLOY_HOST }}:./"
