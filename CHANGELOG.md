@@ -1,5 +1,11 @@
 # Changelog
 
+### 1.7.1 (2026-11-19)
+
+#### Continuous Integration
+
+- deploy through the restricted deploy user and build on every push (77db14e)
+
 ## 1.7.0 (2026-06-23)
 
 #### Features
