@@ -12,7 +12,6 @@ const appVersion = __APP_VERSION__;
 
 const username = ref("");
 const theme = ref<"light" | "dark" | "auto">("auto");
-const syncInterval = ref(30);
 
 const copied = ref<string | null>(null);
 const saved = ref(false);
@@ -22,7 +21,6 @@ onMounted(() => {
 	username.value = appStore.username;
 	if (appStore.settings) {
 		theme.value = appStore.settings.theme;
-		syncInterval.value = appStore.settings.syncIntervalSeconds;
 	}
 });
 
@@ -32,7 +30,6 @@ async function handleSave() {
 	appStore.updateSettings({
 		username: username.value.trim() || appStore.state.username,
 		theme: theme.value,
-		syncIntervalSeconds: Math.max(5, syncInterval.value),
 	});
 
 	// Sync settings to backend now rather than after the debounce
@@ -123,25 +120,6 @@ async function handleReset() {
 					<option value="light">Light</option>
 					<option value="dark">Dark</option>
 				</select>
-			</section>
-
-			<!-- Sync interval -->
-			<section class="settings-section">
-				<label class="field-label" for="settings-sync-interval"
-					>Sync interval (seconds)</label
-				>
-				<input
-					id="settings-sync-interval"
-					v-model.number="syncInterval"
-					type="number"
-					class="input"
-					min="5"
-					max="3600"
-					step="1"
-				/>
-				<p class="field-hint">
-					How often lists sync with the backend. Minimum 5s.
-				</p>
 			</section>
 
 			<!-- Save button (main) -->

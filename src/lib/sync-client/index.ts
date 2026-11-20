@@ -4,7 +4,7 @@ export * from "./crypto";
 export * from "./types";
 export * from "./schemas";
 
-import type { z } from "zod/v4";
+import type { z } from "zod";
 import type { SyncClient } from "./client";
 import { encrypt, decrypt } from "./crypto";
 

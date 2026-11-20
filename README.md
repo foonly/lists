@@ -40,6 +40,9 @@ pnpm install
 
 # Start the dev server
 pnpm dev
+
+# Run the tests
+pnpm test
 ```
 
 The app will be available at `http://localhost:5173` by default.
@@ -70,38 +73,41 @@ Output is written to `dist/`. Serve it with any static file server — the servi
 src/
 ├── main.ts                  # App entry point
 ├── App.vue                  # Root component
-├── router.ts                # Vue Router setup with auth guard
+├── router.ts                # Vue Router setup with setup/import guard
 ├── lib/
+│   ├── idb.ts               # IndexedDB key-value helpers (shared connection)
+│   ├── stable-json.ts       # Key-sorted JSON for comparisons and tie-breaks
 │   └── sync-client/         # Reusable encrypted-blob sync library
-│       ├── index.ts         # Public API (pullBlob, pushBlob)
-│       ├── client.ts        # SyncClient class (HTTP layer)
+│       ├── index.ts         # Public API (pullBlob, pushBlob, re-exports)
+│       ├── client.ts        # SyncClient (signed HTTP requests), SyncHttpError
+│       ├── hub.ts           # SyncHub (WebSocket real-time updates)
 │       ├── crypto.ts        # AES-GCM encrypt/decrypt, HMAC signing, key generation
+│       ├── utils.ts         # Per-sync-ID request timestamps
 │       ├── types.ts         # Shared TypeScript types
 │       └── schemas.ts       # Zod schemas for API responses
 ├── models/
-│   ├── app-state.ts         # App state blob schema & share-string codec
-│   └── list.ts              # List blob schema & tracked-field helpers
+│   ├── app-state.ts         # App state schema, merge, credential codecs
+│   └── list.ts              # List blob schema, tracked fields, item merge
 ├── stores/
 │   ├── app.ts               # App-level state (lists, settings, credentials)
-│   └── list.ts              # Currently-open list (items, sync loop, merge)
+│   ├── list.ts              # Currently-open list (items, sync, persistence)
+│   └── local-memory.ts      # Device-local autofill memory and sticky groups
 ├── views/
-│   ├── HomeView.vue         # Dashboard — list of lists, create, import
+│   ├── HomeView.vue         # Dashboard — list of lists, create
 │   ├── ListView.vue         # Single list — items, groups, drag-and-drop
-│   ├── SettingsView.vue     # Username, backend URL, theme, credentials
+│   ├── ImportView.vue       # Confirm and add a shared list
+│   ├── SettingsView.vue     # Username, theme, credentials, reset
 │   └── SetupView.vue        # First-time setup / restore flow
-├── components/
-│   ├── AppBar.vue           # Top navigation bar
-│   ├── ConfirmDialog.vue    # Reusable modal confirmation dialog
-│   ├── GroupHeader.vue      # Group separator header
-│   ├── ListCard.vue         # List summary card for the dashboard
-│   ├── ListItemEditor.vue   # Add / edit item form
-│   ├── ListItemRow.vue      # Single item row
-│   └── SyncStatus.vue       # Sync state indicator
+├── components/              # AppBar, ListCard, ListItemRow, ListItemEditor,
+│                            # AutofillMenu, GroupHeader, ConfirmDialog, SyncStatus
 ├── composables/
-│   └── useSortable.ts       # SortableJS composable
+│   ├── useAutofill.ts       # Autofill suggestions for item text inputs
+│   └── useNow.ts            # Ticking clock for relative times
 └── styles/
     └── main.css             # Global styles and CSS custom properties
 ```
+
+Tests live next to the code they cover (`*.test.ts`) and run with [Vitest](https://vitest.dev/).
 
 ## How It Works
 
@@ -109,27 +115,30 @@ src/
 
 There are two kinds of encrypted blobs:
 
-- **App state blob** (one per user) — stores your username, settings, and the credentials for every list you have access to. Persisted in localStorage and synced to a dedicated backend slot.
+- **App state blob** (one per user) — stores your username, settings, and the credentials for every list you have access to. Persisted in localStorage and synced to a dedicated backend slot. When several of your devices change it, the copies are merged per list entry (last change wins for names; removed lists leave a tombstone so they stay removed), so devices converge instead of overwriting each other.
 - **List blob** (one per list) — stores all items in the list. Persisted in IndexedDB and synced to its own backend slot.
 
 Every mutable field on a list item is a **tracked field** carrying a value, a timestamp, and the username of who last changed it. This enables per-field last-writer-wins merging when multiple users edit concurrently.
 
 ### Sync
 
-- When a list is open, changes are synced to the backend with a **5-second debounce** after any mutation.
+- When a list is open, changes are synced to the backend with a **2-second debounce** after any mutation.
 - Real-time updates are received via **WebSockets** while a list is open, ensuring concurrent changes from other users are merged instantly.
 - All changes are persisted to IndexedDB immediately, so nothing is lost if the page is closed before sync completes.
-- The merge algorithm operates at the field level: for each item present in both local and remote, every tracked field is resolved independently by timestamp. Equal timestamps prefer the remote value.
+- The merge algorithm operates at the field level: for each item present in both local and remote, every tracked field is resolved independently by timestamp. Equal timestamps are broken by content, so every device picks the same value. If a merge keeps anything the server doesn't have, the merged list is pushed back.
+- The app renders from local data immediately and syncs in the background; it never waits on the network to show your lists.
 
 ### Encryption & Authentication
 
 - List data is encrypted client-side with **AES-256-GCM**. The encryption key never leaves the client.
-- Backend writes are authenticated with **HMAC-SHA256** signed requests using a per-slot signing secret.
+- Backend requests (reads, writes and WebSocket subscriptions) are authenticated with **HMAC-SHA256** signatures using a per-slot signing secret.
 - On first write to a new slot, the signing secret is registered with the backend. Subsequent writes are verified against it.
 
 ### Sharing
 
-Lists are shared by exchanging a credential string in the format `name|syncId|cryptKey|secret`. Anyone with this string has full read/write access to the list. The string can be copied from the list view and pasted into another user's app via the import flow on the home screen.
+Lists are shared by exchanging a credential string in the format `name|syncId|cryptKey|secret`. Anyone with this string has full read/write access to the list.
+
+The share button in the list view copies a link of the form `https://<app>/import#<credential string>`. The credentials are in the URL fragment, which browsers never send to the server, so they stay out of web server logs. Opening the link asks for confirmation before the list is added. Older `/import/<code>` links are still accepted.
 
 ## Backend
 

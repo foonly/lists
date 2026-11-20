@@ -22,6 +22,8 @@ export const AppStateSchema = z.object({
 	username: z.string().min(1),
 	lists: z.array(ListCredentialsSchema),
 	settings: z.object({
+		// Unused: syncing is event-driven (debounced pushes + WebSocket).
+		// Kept so blobs stay readable by older app versions that require it.
 		syncIntervalSeconds: z.number().default(30),
 		theme: z.enum(["light", "dark", "auto"]).default("auto"),
 	}),

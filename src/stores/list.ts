@@ -1,7 +1,12 @@
 import { defineStore } from "pinia";
 import { ref, computed, watch } from "vue";
 import { nanoid } from "nanoid";
-import { ListBlobSchema, tracked, TRACKED_FIELDS } from "@/models/list";
+import {
+	ListBlobSchema,
+	tracked,
+	TRACKED_FIELDS,
+	mergeListItems,
+} from "@/models/list";
 import type { ListBlob, ListItem, TrackedFieldName } from "@/models/list";
 import type { ListCredentials } from "@/models/app-state";
 import {
@@ -288,72 +293,6 @@ export const useListStore = defineStore("list", () => {
 		}
 	}
 
-	// ---------------------------------------------------------------------------
-	// Merge
-	// ---------------------------------------------------------------------------
-
-	function mergeItems(local: ListItem[], remote: ListItem[]): ListItem[] {
-		const localMap = new Map<string, ListItem>(
-			local.map((item) => [item.id, item]),
-		);
-		const remoteMap = new Map<string, ListItem>(
-			remote.map((item) => [item.id, item]),
-		);
-
-		// Follow the remote item order, then local-only items, so a device that
-		// adopts a remote list reproduces it exactly and has nothing to push back.
-		const allIds = new Set<string>([...remoteMap.keys(), ...localMap.keys()]);
-
-		const merged: ListItem[] = [];
-
-		for (const id of allIds) {
-			const localItem = localMap.get(id);
-			const remoteItem = remoteMap.get(id);
-
-			if (localItem && !remoteItem) {
-				merged.push(localItem);
-			} else if (!localItem && remoteItem) {
-				merged.push(remoteItem);
-			} else if (localItem && remoteItem) {
-				// Per-field last-writer-wins merge.
-				// Clone local as the base, then overlay winning fields.
-				const mergedItem: ListItem = {
-					id: localItem.id,
-					createdBy: localItem.createdBy,
-					createdAt: localItem.createdAt,
-					text: { ...localItem.text },
-					quantity: { ...localItem.quantity },
-					unit: { ...localItem.unit },
-					group: { ...localItem.group },
-					order: { ...localItem.order },
-					done: { ...localItem.done },
-					deleted: { ...localItem.deleted },
-				};
-
-				for (const field of TRACKED_FIELDS) {
-					const localField = localItem[field];
-					const remoteField = remoteItem[field];
-					// Later timestamp wins. Equal timestamps are broken by content,
-					// so every device picks the same value and they converge.
-					const remoteWins =
-						remoteField.timestamp !== localField.timestamp
-							? remoteField.timestamp > localField.timestamp
-							: stableStringify(remoteField) >= stableStringify(localField);
-					if (remoteWins) {
-						// Use type assertion since TS can't narrow the union across
-						// all tracked field types in a generic loop.
-						(mergedItem[field] as typeof remoteField) = {
-							...remoteField,
-						};
-					}
-				}
-
-				merged.push(mergedItem);
-			}
-		}
-
-		return merged;
-	}
 
 	// ---------------------------------------------------------------------------
 	// Sync timing – 5 s debounced push after mutations
@@ -451,7 +390,7 @@ export const useListStore = defineStore("list", () => {
 
 			if (blob.value && blob.value.items.length > 0) {
 				syncMeta.value.status = "merging";
-				const merged = mergeItems(blob.value.items, remoteData.items);
+				const merged = mergeListItems(blob.value.items, remoteData.items);
 				blob.value = { version: 1, items: merged };
 			} else {
 				blob.value = remoteData;
@@ -792,7 +731,7 @@ export const useListStore = defineStore("list", () => {
 
 					if (blob.value && blob.value.items.length > 0) {
 						syncMeta.value.status = "merging";
-						const merged = mergeItems(blob.value.items, remote.data.items);
+						const merged = mergeListItems(blob.value.items, remote.data.items);
 						blob.value = { version: 1, items: merged };
 					} else {
 						blob.value = remote.data;
@@ -896,7 +835,6 @@ export const useListStore = defineStore("list", () => {
 		toggleDelete,
 		deleteDoneItems,
 		reorderItem,
-		mergeItems,
 		sync,
 		updateChecksums,
 		saveToIndexedDB,

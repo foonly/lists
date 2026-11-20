@@ -454,14 +454,10 @@ export const useAppStore = defineStore("app", () => {
 	function updateSettings(changes: {
 		username?: string;
 		theme?: AppState["settings"]["theme"];
-		syncIntervalSeconds?: number;
 	}): void {
 		if (!state.value) return;
 		if (changes.username) state.value.username = changes.username;
 		if (changes.theme) state.value.settings.theme = changes.theme;
-		if (changes.syncIntervalSeconds !== undefined) {
-			state.value.settings.syncIntervalSeconds = changes.syncIntervalSeconds;
-		}
 		state.value.settingsUpdatedAt = Date.now();
 		commitLocalChange();
 	}

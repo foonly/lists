@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { stableStringify } from "@/lib/stable-json";
 
 // Generic tracked field — each mutable field carries its own timestamp and author.
 // This enables per-field last-writer-wins merging during sync.
@@ -70,3 +71,74 @@ export const TRACKED_FIELDS = [
 	"deleted",
 ] as const;
 export type TrackedFieldName = (typeof TRACKED_FIELDS)[number];
+
+/**
+ * Merge two versions of a list's items with per-field last-writer-wins.
+ *
+ * The result follows the remote item order, then local-only items, so a
+ * device that adopts a remote list reproduces it exactly. Equal timestamps
+ * are broken by content, so every device picks the same value: merging is
+ * deterministic and devices exchanging lists converge.
+ */
+export function mergeListItems(local: ListItem[], remote: ListItem[]): ListItem[] {
+	const localMap = new Map<string, ListItem>(
+		local.map((item) => [item.id, item]),
+	);
+	const remoteMap = new Map<string, ListItem>(
+		remote.map((item) => [item.id, item]),
+	);
+
+	// Follow the remote item order, then local-only items, so a device that
+	// adopts a remote list reproduces it exactly and has nothing to push back.
+	const allIds = new Set<string>([...remoteMap.keys(), ...localMap.keys()]);
+
+	const merged: ListItem[] = [];
+
+	for (const id of allIds) {
+		const localItem = localMap.get(id);
+		const remoteItem = remoteMap.get(id);
+
+		if (localItem && !remoteItem) {
+			merged.push(localItem);
+		} else if (!localItem && remoteItem) {
+			merged.push(remoteItem);
+		} else if (localItem && remoteItem) {
+			// Per-field last-writer-wins merge.
+			// Clone local as the base, then overlay winning fields.
+			const mergedItem: ListItem = {
+				id: localItem.id,
+				createdBy: localItem.createdBy,
+				createdAt: localItem.createdAt,
+				text: { ...localItem.text },
+				quantity: { ...localItem.quantity },
+				unit: { ...localItem.unit },
+				group: { ...localItem.group },
+				order: { ...localItem.order },
+				done: { ...localItem.done },
+				deleted: { ...localItem.deleted },
+			};
+
+			for (const field of TRACKED_FIELDS) {
+				const localField = localItem[field];
+				const remoteField = remoteItem[field];
+				// Later timestamp wins. Equal timestamps are broken by content,
+				// so every device picks the same value and they converge.
+				const remoteWins =
+					remoteField.timestamp !== localField.timestamp
+						? remoteField.timestamp > localField.timestamp
+						: stableStringify(remoteField) >= stableStringify(localField);
+				if (remoteWins) {
+					// Use type assertion since TS can't narrow the union across
+					// all tracked field types in a generic loop.
+					(mergedItem[field] as typeof remoteField) = {
+						...remoteField,
+					};
+				}
+			}
+
+			merged.push(mergedItem);
+		}
+	}
+
+	return merged;
+}

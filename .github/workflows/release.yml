@@ -19,6 +19,7 @@ jobs:
         with:
           node-version: lts/*
           cache: pnpm
+      - run: make test
       - run: make
         env:
           VITE_API_BASE_URL: "https://blob.foonly.dev"

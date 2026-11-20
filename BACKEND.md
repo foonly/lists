@@ -1,6 +1,6 @@
-# Bookmark Sync Backend Specification
+# Sync Backend Specification
 
-This document defines the technical specification for a decentralized storage vault designed to synchronize encrypted bookmark data across multiple devices. The backend acts as a "dumb" storage provider for opaque, versioned blobs.
+This document describes the backend protocol the Lists app relies on: a storage vault that synchronizes encrypted data blobs across devices and users. The backend acts as a "dumb" storage provider for opaque, versioned blobs. The authoritative specification is the [Foonblob API](https://github.com/foonly/foonblob-api/blob/main/API.md); this document records what this client sends and expects.
 
 ## Overview
 
@@ -15,6 +15,15 @@ The backend is responsible for storing and retrieving encrypted data blobs. It d
 ## API Specification
 
 All endpoints are prefixed with `/api/v1`.
+
+### Signed reads
+
+All `GET` requests carry the same two headers as uploads, but sign the request path instead of a body:
+
+- `X-Sync-Timestamp`: Unix timestamp in seconds (UTC).
+- `X-Sync-Signature`: HMAC-SHA256(signing_secret, timestamp + path), hex-encoded, where `path` is the full URL path including the `/api/v1` prefix, e.g. `/api/v1/sync/abc123`.
+
+The client keeps timestamps strictly increasing per Sync ID (see Replay Protection) and retries once with a fresh timestamp on `401`.
 
 ### 1. Get Latest Sync Data
 
@@ -42,9 +51,11 @@ Uploads a new encrypted blob. This action automatically triggers history pruning
   ```json
   {
   	"data": "base64_encoded_encrypted_blob",
-  	"registration_secret": "signing_secret_string (first upload only)"
+  	"registration_secret": "signing_secret_string (first upload only)",
+  	"allowed_origin": "https://lists.example (first upload only)"
   }
   ```
+  `allowed_origin` is sent together with `registration_secret` and names the web origin that registered the ID.
   The `registration_secret` field **must** be included on the very first `POST` to a new `Sync ID` and **must not** be included on subsequent uploads. See [Client-side registration flow](#client-side-registration-flow) below.
 - **Success Response (201 Created)**: Blob stored successfully.
 - **Error Response (401 Unauthorized)**: Signature is invalid or timestamp has expired.
@@ -78,6 +89,28 @@ Retrieves a specific historical blob by its timestamp.
   	"timestamp": 1624999000
   }
   ```
+
+### 5. Real-time Updates (WebSocket)
+
+- **URL**: `GET /ws` (WebSocket upgrade; `ws://` or `wss://` matching the API scheme)
+
+Client → server messages:
+
+```json
+{ "type": "subscribe", "id": "<sync id>", "timestamp": 1625000000, "signature": "<hex>" }
+{ "type": "unsubscribe", "id": "<sync id>" }
+```
+
+The subscribe signature is HMAC-SHA256(signing_secret, timestamp + "subscribe" + id), hex-encoded. One connection carries subscriptions for many IDs; the client resubscribes to all of them after reconnecting.
+
+Server → client messages:
+
+```json
+{ "type": "update", "id": "<sync id>", "data": "<base64 blob>", "timestamp": 1625000000 }
+{ "type": "error", "id": "<sync id>", "code": 401, "message": "..." }
+```
+
+`update` is sent whenever a new blob is uploaded for a subscribed ID. For `error`, the client retries the subscription with backoff on `404` (blob not uploaded yet) and `401` (e.g. a replayed timestamp).
 
 ---
 
