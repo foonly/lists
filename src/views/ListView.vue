@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onUnmounted, watch, nextTick } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useListStore } from "@/stores/list";
 import { useAppStore } from "@/stores/app";
+import { useLocalMemoryStore } from "@/stores/local-memory";
 import { encodeShareString } from "@/models/app-state";
 import type { ListCredentials } from "@/models/app-state";
 import type { ListItem } from "@/models/list";
@@ -18,6 +19,7 @@ const route = useRoute();
 const router = useRouter();
 const listStore = useListStore();
 const appStore = useAppStore();
+const localMemory = useLocalMemoryStore();
 
 const creds = ref<ListCredentials | null>(null);
 const editingName = ref(false);
@@ -75,9 +77,13 @@ const syncId = computed(() => route.params.syncId as string);
 
 const listName = computed(() => creds.value?.name ?? "List");
 
-// Group all items by their group field
+// Group all items by their group field. Sticky groups (remembered on this
+// device) are included even when they have no items left.
 const allGroupedItems = computed(() => {
 	const groups = new Map<string, ListItem[]>();
+	for (const name of listStore.groups) {
+		groups.set(name, []);
+	}
 	// listStore.items are already sorted by group then order
 	for (const item of listStore.items) {
 		const groupName = item.group.value ?? "";
@@ -88,7 +94,9 @@ const allGroupedItems = computed(() => {
 	}
 
 	// Move ungrouped ("") to the end of the entry list
-	const entries = Array.from(groups.entries());
+	const entries = Array.from(groups.entries()).sort(([a], [b]) =>
+		a.localeCompare(b),
+	);
 	const ungroupedIdx = entries.findIndex(([name]) => name === "");
 
 	if (ungroupedIdx !== -1) {
@@ -100,7 +108,11 @@ const allGroupedItems = computed(() => {
 });
 
 const hasDoneItems = computed(() => listStore.doneItems.length > 0);
-const hasAnyItems = computed(() => listStore.items.length > 0);
+const hasAnyItems = computed(() => allGroupedItems.value.length > 0);
+
+function handleRemoveGroup(groupName: string) {
+	localMemory.removeStickyGroup(syncId.value, groupName);
+}
 
 function getChecksumMatch(item: ListItem): boolean | null {
 	if (item.done.value === null) return null;
@@ -202,6 +214,15 @@ async function handleAddInline(groupName?: string) {
 
 async function handleUpdateText(id: string, text: string) {
 	await listStore.updateItem(id, { text });
+}
+
+/** An ungrouped item took an autofill suggestion from a group: move it to the end of that group. */
+async function handleMoveToGroup(id: string, text: string, group: string) {
+	await listStore.updateItem(id, { text });
+	const groupSize = listStore.items.filter(
+		(i) => i.group.value === group && i.id !== id,
+	).length;
+	await listStore.reorderItem(id, group, groupSize);
 }
 
 async function handleDeleteDone() {
@@ -430,7 +451,9 @@ watch(
 					>
 						<GroupHeader
 							:name="groupName || 'Ungrouped'"
+							:removable="groupName !== '' && items.length === 0"
 							@add="handleAddInline(groupName)"
+							@remove="handleRemoveGroup(groupName)"
 						/>
 						<div
 							:ref="(el) => setGroupRef(groupName, el)"
@@ -467,6 +490,9 @@ watch(
 									@delete="handleDelete(item.id)"
 									@edit="handleEdit(item.id)"
 									@update-text="(text) => handleUpdateText(item.id, text)"
+									@move-to-group="
+										(text, group) => handleMoveToGroup(item.id, text, group)
+									"
 								/>
 							</div>
 						</div>
@@ -785,8 +811,13 @@ watch(
 	max-width: 500px;
 	background: var(--color-surface);
 	border-radius: 16px 16px 0 0;
-	overflow: hidden;
+	/* visible so the autofill menu can open above the text input */
+	overflow: visible;
 	box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.modal-content > :deep(.item-editor) {
+	border-radius: inherit;
 }
 
 .modal-fade-enter-active,

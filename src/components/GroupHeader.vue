@@ -1,10 +1,13 @@
 <script setup lang="ts">
 defineProps<{
 	name: string;
+	/** Show a remove button (for empty groups kept visible on this device). */
+	removable?: boolean;
 }>();
 
 const emit = defineEmits<{
 	add: [];
+	remove: [];
 }>();
 </script>
 
@@ -13,7 +16,29 @@ const emit = defineEmits<{
 		<span class="group-name">{{ name }}</span>
 		<hr class="group-rule" />
 		<button
-			class="add-inline-btn"
+			v-if="removable"
+			class="header-btn remove-btn"
+			:aria-label="`Remove empty group ${name}`"
+			title="Remove empty group"
+			@click="emit('remove')"
+		>
+			<svg
+				width="14"
+				height="14"
+				viewBox="0 0 16 16"
+				fill="none"
+				aria-hidden="true"
+			>
+				<path
+					d="M4 4L12 12M12 4L4 12"
+					stroke="currentColor"
+					stroke-width="2"
+					stroke-linecap="round"
+				/>
+			</svg>
+		</button>
+		<button
+			class="header-btn add-inline-btn"
 			aria-label="Add item to this group"
 			@click="emit('add')"
 		>
@@ -64,7 +89,7 @@ const emit = defineEmits<{
 	border-top: 1px solid var(--color-border, #e0e0e0);
 }
 
-.add-inline-btn {
+.header-btn {
 	display: flex;
 	align-items: center;
 	justify-content: center;
@@ -80,7 +105,15 @@ const emit = defineEmits<{
 	flex-shrink: 0;
 }
 
-.add-inline-btn:hover {
+.header-btn:hover {
 	background: var(--color-hover);
+}
+
+.remove-btn {
+	color: var(--color-text-secondary);
+}
+
+.remove-btn:hover {
+	color: var(--color-danger);
 }
 </style>

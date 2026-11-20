@@ -19,6 +19,7 @@ import {
 	generateCryptKey,
 	generateSecret,
 } from "@/lib/sync-client";
+import { useLocalMemoryStore } from "./local-memory";
 
 const APP_STATE_KEY = "lists-app-state";
 const APP_CREDENTIALS_KEY = "lists-app-credentials";
@@ -311,6 +312,7 @@ export const useAppStore = defineStore("app", () => {
 	function removeList(syncId: string): void {
 		if (!state.value) return;
 		state.value.lists = state.value.lists.filter((l) => l.syncId !== syncId);
+		useLocalMemoryStore().forgetList(syncId);
 		dirty.value = true;
 		saveToLocalStorage();
 

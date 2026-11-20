@@ -13,6 +13,7 @@ import {
 	type ConnectionStatus,
 } from "@/lib/sync-client";
 import { useAppStore, getHub } from "./app";
+import { useLocalMemoryStore } from "./local-memory";
 
 // ---------------------------------------------------------------------------
 // SyncMeta type
@@ -195,12 +196,21 @@ export const useListStore = defineStore("list", () => {
 		return items.value.filter((item) => item.done.value === null);
 	});
 
-	/** Unique group names from non-deleted items. */
+	/**
+	 * Group names in use by non-deleted items, plus this device's sticky groups
+	 * for the list (groups that stay visible after their items are gone).
+	 */
 	const groups = computed(() => {
 		const names = new Set<string>();
 		for (const item of nonDeletedItems.value) {
 			if (item.group.value !== null) {
 				names.add(item.group.value);
+			}
+		}
+		if (credentials.value) {
+			const memory = useLocalMemoryStore();
+			for (const g of memory.getStickyGroups(credentials.value.syncId)) {
+				names.add(g);
 			}
 		}
 		return [...names].sort();
@@ -238,7 +248,20 @@ export const useListStore = defineStore("list", () => {
 
 	async function saveToIndexedDB(): Promise<void> {
 		if (!blob.value || !credentials.value) return;
+		rememberLocally();
 		await idbSet(idbKey(), JSON.stringify(blob.value));
+	}
+
+	/** Feed the device-local autofill memory and sticky groups from this list. */
+	function rememberLocally(): void {
+		if (!credentials.value) return;
+		const memory = useLocalMemoryStore();
+		memory.rememberItems(credentials.value.syncId, nonDeletedItems.value);
+		const used = new Set<string>();
+		for (const item of nonDeletedItems.value) {
+			if (item.group.value !== null) used.add(item.group.value);
+		}
+		memory.addStickyGroups(credentials.value.syncId, [...used]);
 	}
 
 	function updateAppMetadata(): void {
@@ -275,6 +298,7 @@ export const useListStore = defineStore("list", () => {
 		if (raw) {
 			try {
 				blob.value = ListBlobSchema.parse(JSON.parse(raw));
+				rememberLocally();
 				updateAppMetadata();
 			} catch {
 				blob.value = null;

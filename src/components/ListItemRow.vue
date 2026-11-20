@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { ref, nextTick, watch } from "vue";
 import type { ListItem } from "@/models/list";
+import type { Suggestion } from "@/stores/local-memory";
+import { useAutofill } from "@/composables/useAutofill";
+import AutofillMenu from "./AutofillMenu.vue";
 
 const props = defineProps<{
 	item: ListItem;
@@ -13,6 +16,8 @@ const emit = defineEmits<{
 	delete: [];
 	edit: [];
 	"update-text": [text: string];
+	/** Text picked from autofill that belongs in another group: move it there. */
+	"move-to-group": [text: string, group: string];
 }>();
 
 function isDone(): boolean {
@@ -54,6 +59,42 @@ function saveEdit() {
 
 function cancelEdit() {
 	isEditingInline.value = false;
+}
+
+const autofill = useAutofill(
+	localText,
+	() => props.item.group.value,
+	() => props.item.id,
+);
+
+function pickSuggestion(s: Suggestion) {
+	autofill.close();
+	localText.value = s.text;
+	// Suggestions only come from other groups while entering ungrouped.
+	if (s.group !== null && s.group !== props.item.group.value) {
+		isEditingInline.value = false;
+		emit("move-to-group", s.text, s.group);
+	} else {
+		saveEdit();
+	}
+}
+
+function handleInlineBlur() {
+	autofill.close();
+	saveEdit();
+}
+
+function handleInlineKeydown(e: KeyboardEvent) {
+	const handled = autofill.handleKeydown(e);
+	if (typeof handled === "object") {
+		pickSuggestion(handled);
+	} else if (handled) {
+		return;
+	} else if (e.key === "Enter") {
+		saveEdit();
+	} else if (e.key === "Escape") {
+		cancelEdit();
+	}
 }
 
 function getAttribution(): string {
@@ -316,6 +357,7 @@ watch(
 }
 
 .text-wrapper {
+	position: relative;
 	cursor: pointer;
 }
 

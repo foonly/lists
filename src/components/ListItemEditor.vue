@@ -1,5 +1,8 @@
 <script setup lang="ts">
 import { ref, nextTick, watch } from "vue";
+import type { Suggestion } from "@/stores/local-memory";
+import { useAutofill } from "@/composables/useAutofill";
+import AutofillMenu from "./AutofillMenu.vue";
 
 const props = defineProps<{
 	groups: string[];
@@ -47,6 +50,27 @@ function clearForm() {
 function handleCancel() {
 	clearForm();
 	emit("cancel-edit");
+}
+
+const autofill = useAutofill(
+	text,
+	() => group.value.trim() || null,
+	() => props.editItem?.id,
+);
+
+function pickSuggestion(s: Suggestion) {
+	autofill.close();
+	text.value = s.text;
+	// Picked while ungrouped from a grouped item: take its group too.
+	if (s.group !== null && !group.value.trim()) {
+		group.value = s.group;
+	}
+	nextTick(() => textInput.value?.focus());
+}
+
+function handleTextKeydown(e: KeyboardEvent) {
+	const handled = autofill.handleKeydown(e);
+	if (typeof handled === "object") pickSuggestion(handled);
 }
 
 function handleEscape(e: KeyboardEvent) {
@@ -141,15 +165,27 @@ function toggleExpanded() {
 		</div>
 
 		<div class="editor-main-row">
-			<input
-				ref="textInput"
-				v-model="text"
-				type="text"
-				class="editor-input text-input"
-				:placeholder="editItem ? 'Item text…' : 'Add an item…'"
-				autocomplete="off"
-				autofocus
-			/>
+			<div class="text-field">
+				<input
+					ref="textInput"
+					v-model="text"
+					type="text"
+					class="editor-input"
+					:placeholder="editItem ? 'Item text…' : 'Add an item…'"
+					autocomplete="off"
+					autofocus
+					@input="autofill.onInput"
+					@keydown="handleTextKeydown"
+					@blur="autofill.close"
+				/>
+				<AutofillMenu
+					:suggestions="autofill.suggestions.value"
+					:active-index="autofill.activeIndex.value"
+					:show-groups="!group.trim()"
+					placement="above"
+					@pick="pickSuggestion"
+				/>
+			</div>
 			<button
 				v-if="!editItem"
 				type="button"
@@ -295,7 +331,8 @@ function toggleExpanded() {
 	color: var(--color-text-secondary);
 }
 
-.text-input {
+.text-field {
+	position: relative;
 	flex: 1;
 	min-width: 0;
 }
