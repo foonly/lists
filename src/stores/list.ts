@@ -14,6 +14,7 @@ import {
 } from "@/lib/sync-client";
 import { useAppStore, getHub } from "./app";
 import { useLocalMemoryStore } from "./local-memory";
+import { stableStringify } from "@/lib/stable-json";
 
 // ---------------------------------------------------------------------------
 // SyncMeta type
@@ -341,7 +342,9 @@ export const useListStore = defineStore("list", () => {
 			remote.map((item) => [item.id, item]),
 		);
 
-		const allIds = new Set<string>([...localMap.keys(), ...remoteMap.keys()]);
+		// Follow the remote item order, then local-only items, so a device that
+		// adopts a remote list reproduces it exactly and has nothing to push back.
+		const allIds = new Set<string>([...remoteMap.keys(), ...localMap.keys()]);
 
 		const merged: ListItem[] = [];
 
@@ -372,8 +375,13 @@ export const useListStore = defineStore("list", () => {
 				for (const field of TRACKED_FIELDS) {
 					const localField = localItem[field];
 					const remoteField = remoteItem[field];
-					// Later timestamp wins. Equal timestamps → prefer remote.
-					if (remoteField.timestamp >= localField.timestamp) {
+					// Later timestamp wins. Equal timestamps are broken by content,
+					// so every device picks the same value and they converge.
+					const remoteWins =
+						remoteField.timestamp !== localField.timestamp
+							? remoteField.timestamp > localField.timestamp
+							: stableStringify(remoteField) >= stableStringify(localField);
+					if (remoteWins) {
 						// Use type assertion since TS can't narrow the union across
 						// all tracked field types in a generic loop.
 						(mergedItem[field] as typeof remoteField) = {
@@ -480,7 +488,7 @@ export const useListStore = defineStore("list", () => {
 			const remoteData = ListBlobSchema.parse(parsed);
 
 			remoteExistsConfirmed.value = true;
-			lastKnownRemoteJson = JSON.stringify(remoteData);
+			lastKnownRemoteJson = stableStringify(remoteData);
 			syncMeta.value.remoteTimestamp = remote.timestamp;
 
 			if (blob.value && blob.value.items.length > 0) {
@@ -491,14 +499,20 @@ export const useListStore = defineStore("list", () => {
 				blob.value = remoteData;
 			}
 
+			// If the merge kept anything the server doesn't have (local edits
+			// or items the sender lacked), push the merged list back.
+			const differsFromRemote =
+				stableStringify(blob.value) !== lastKnownRemoteJson;
 			syncMeta.value.status = "idle";
+			syncMeta.value.error = null;
 			syncMeta.value.lastSyncedAt = Date.now();
-			syncMeta.value.dirty = false;
+			syncMeta.value.dirty = differsFromRemote;
 
 			await updateChecksums();
 			if (gen !== session) return;
 			await saveToIndexedDB();
 			updateAppMetadata();
+			if (differsFromRemote) scheduleDebouncedSync();
 		} catch (e) {
 			if (gen !== session) return;
 			syncMeta.value.status = "error";
@@ -816,7 +830,7 @@ export const useListStore = defineStore("list", () => {
 				if (remote) {
 					remoteExistsConfirmed.value = true;
 					syncMeta.value.remoteTimestamp = remote.timestamp;
-					lastKnownRemoteJson = JSON.stringify(remote.data);
+					lastKnownRemoteJson = stableStringify(remote.data);
 
 					if (blob.value && blob.value.items.length > 0) {
 						syncMeta.value.status = "merging";
@@ -839,7 +853,7 @@ export const useListStore = defineStore("list", () => {
 			// --- Push (only if something changed) ----------------------------
 			// Snapshot exactly what is sent: edits made while the request is
 			// in flight must not be recorded as already on the server.
-			const pushedJson = JSON.stringify(blob.value);
+			const pushedJson = stableStringify(blob.value);
 
 			if (pushedJson !== lastKnownRemoteJson) {
 				syncMeta.value.status = "pushing";
@@ -857,7 +871,7 @@ export const useListStore = defineStore("list", () => {
 			}
 
 			// --- Done --------------------------------------------------------
-			const stillDirty = JSON.stringify(blob.value) !== lastKnownRemoteJson;
+			const stillDirty = stableStringify(blob.value) !== lastKnownRemoteJson;
 			syncMeta.value.status = "idle";
 			syncMeta.value.error = null;
 			syncMeta.value.lastSyncedAt = Date.now();

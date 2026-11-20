@@ -1,7 +1,9 @@
 import { defineStore } from "pinia";
-import { ref, computed } from "vue";
+import { ref, computed, watch } from "vue";
 import {
 	AppStateSchema,
+	mergeAppStates,
+	sameAppState,
 	type AppState,
 	type ListCredentials,
 	decodeShareString,
@@ -23,6 +25,8 @@ import { useLocalMemoryStore } from "./local-memory";
 
 const APP_STATE_KEY = "lists-app-state";
 const APP_CREDENTIALS_KEY = "lists-app-credentials";
+/** Persisted so changes made offline are still pushed after a restart. */
+const APP_DIRTY_KEY = "lists-app-dirty";
 
 const API_BASE_URL: string =
 	import.meta.env.VITE_API_BASE_URL ?? "https://blob.foonly.dev";
@@ -53,8 +57,22 @@ export const useAppStore = defineStore("app", () => {
 	/** Tracks whether local state has changed since the last successful push. */
 	const dirty = ref(false);
 
+	watch(dirty, (isDirty) => {
+		try {
+			if (isDirty) localStorage.setItem(APP_DIRTY_KEY, "1");
+			else localStorage.removeItem(APP_DIRTY_KEY);
+		} catch {
+			// Best effort: the merge on the next pull still recovers changes.
+		}
+	});
+
 	let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+	let retryTimer: ReturnType<typeof setTimeout> | null = null;
 	const DEBOUNCE_MS = 2_000;
+	/** A push is in flight; another one must wait for it. */
+	let syncing = false;
+	/** A push was requested while one was in flight. */
+	let pendingSync = false;
 
 	// ---------------------------------------------------------------------------
 	// Getters
@@ -85,9 +103,36 @@ export const useAppStore = defineStore("app", () => {
 		return new SyncClient(API_BASE_URL);
 	}
 
+	/**
+	 * Merge a state received from the backend into the local one. If the
+	 * result holds anything the backend doesn't have yet (local changes, or
+	 * entries another device dropped), mark dirty and push it back.
+	 */
+	function applyRemoteState(remote: AppState): void {
+		const merged = state.value ? mergeAppStates(state.value, remote) : remote;
+		state.value = merged;
+		saveToLocalStorage();
+		if (sameAppState(merged, remote)) {
+			// Everything local is on the backend already, unless a push of
+			// newer changes is still in flight or queued.
+			if (!syncing && !debounceTimer) dirty.value = false;
+		} else {
+			dirty.value = true;
+			scheduleDebouncedSync();
+		}
+	}
+
+	/** Record a local change: persist it and schedule a push. */
+	function commitLocalChange(): void {
+		dirty.value = true;
+		saveToLocalStorage();
+		scheduleDebouncedSync();
+	}
+
 	function scheduleDebouncedSync() {
 		if (debounceTimer) clearTimeout(debounceTimer);
 		debounceTimer = setTimeout(() => {
+			debounceTimer = null;
 			syncToBackend().catch((e) => {
 				console.warn("App state sync failed:", e);
 			});
@@ -112,6 +157,8 @@ export const useAppStore = defineStore("app", () => {
 		}
 
 		// Load app state
+		dirty.value = localStorage.getItem(APP_DIRTY_KEY) !== null;
+
 		const stateRaw = localStorage.getItem(APP_STATE_KEY);
 		if (stateRaw) {
 			try {
@@ -138,6 +185,8 @@ export const useAppStore = defineStore("app", () => {
 			await pullFromBackend().catch((e) => {
 				console.warn("Background pull on init failed:", e);
 			});
+			// Push changes left over from an earlier session, e.g. made offline.
+			if (dirty.value) scheduleDebouncedSync();
 		}
 
 		// Subscribe to real-time updates if we have credentials
@@ -161,12 +210,7 @@ export const useAppStore = defineStore("app", () => {
 		try {
 			const decrypted = await decrypt(remote.data, credentials.value.cryptKey);
 			const parsed = JSON.parse(decrypted);
-			const remoteData = AppStateSchema.parse(parsed);
-
-			// Simple replace — app state is single-user, no field-level merge needed
-			state.value = remoteData;
-			dirty.value = false;
-			saveToLocalStorage();
+			applyRemoteState(AppStateSchema.parse(parsed));
 		} catch (e) {
 			console.warn("App state remote update failed:", e);
 		}
@@ -190,6 +234,8 @@ export const useAppStore = defineStore("app", () => {
 				syncIntervalSeconds: 30,
 				theme: "auto",
 			},
+			settingsUpdatedAt: Date.now(),
+			removedLists: {},
 		};
 
 		saveToLocalStorage();
@@ -257,6 +303,7 @@ export const useAppStore = defineStore("app", () => {
 			order: state.value.lists.length,
 			activeItemCount: 0,
 			totalItemCount: 0,
+			updatedAt: now,
 		};
 
 		state.value.lists.push(creds);
@@ -298,13 +345,13 @@ export const useAppStore = defineStore("app", () => {
 			order: state.value.lists.length,
 			activeItemCount: 0,
 			totalItemCount: 0,
+			updatedAt: now,
 		};
 
 		state.value.lists.push(creds);
-		dirty.value = true;
-		saveToLocalStorage();
-
-		scheduleDebouncedSync();
+		// Re-importing a removed list revives it.
+		delete state.value.removedLists[parsed.syncId];
+		commitLocalChange();
 
 		return creds;
 	}
@@ -312,11 +359,10 @@ export const useAppStore = defineStore("app", () => {
 	function removeList(syncId: string): void {
 		if (!state.value) return;
 		state.value.lists = state.value.lists.filter((l) => l.syncId !== syncId);
+		// Tombstone so other devices drop the list too instead of re-adding it.
+		state.value.removedLists[syncId] = Date.now();
 		useLocalMemoryStore().forgetList(syncId);
-		dirty.value = true;
-		saveToLocalStorage();
-
-		scheduleDebouncedSync();
+		commitLocalChange();
 	}
 
 	function updateListName(syncId: string, name: string): void {
@@ -324,10 +370,8 @@ export const useAppStore = defineStore("app", () => {
 		const list = state.value.lists.find((l) => l.syncId === syncId);
 		if (list) {
 			list.name = name;
-			dirty.value = true;
-			saveToLocalStorage();
-
-			scheduleDebouncedSync();
+			list.updatedAt = Date.now();
+			commitLocalChange();
 		}
 	}
 
@@ -336,9 +380,7 @@ export const useAppStore = defineStore("app", () => {
 		const list = state.value.lists.find((l) => l.syncId === syncId);
 		if (list) {
 			list.lastAccessedAt = Date.now();
-			dirty.value = true;
-			saveToLocalStorage();
-			scheduleDebouncedSync();
+			commitLocalChange();
 		}
 	}
 
@@ -350,15 +392,33 @@ export const useAppStore = defineStore("app", () => {
 	): void {
 		if (!state.value) return;
 		const list = state.value.lists.find((l) => l.syncId === syncId);
-		if (list) {
-			list.activeItemCount = activeCount;
-			list.totalItemCount = totalCount;
-			list.lastModifiedAt = lastModifiedAt;
-			dirty.value = true;
-			saveToLocalStorage();
-
-			scheduleDebouncedSync();
+		if (!list) return;
+		if (
+			list.activeItemCount === activeCount &&
+			list.totalItemCount === totalCount &&
+			list.lastModifiedAt === lastModifiedAt
+		) {
+			return; // Nothing changed: don't push the app state again.
 		}
+		list.activeItemCount = activeCount;
+		list.totalItemCount = totalCount;
+		list.lastModifiedAt = lastModifiedAt;
+		commitLocalChange();
+	}
+
+	function updateSettings(changes: {
+		username?: string;
+		theme?: AppState["settings"]["theme"];
+		syncIntervalSeconds?: number;
+	}): void {
+		if (!state.value) return;
+		if (changes.username) state.value.username = changes.username;
+		if (changes.theme) state.value.settings.theme = changes.theme;
+		if (changes.syncIntervalSeconds !== undefined) {
+			state.value.settings.syncIntervalSeconds = changes.syncIntervalSeconds;
+		}
+		state.value.settingsUpdatedAt = Date.now();
+		commitLocalChange();
 	}
 
 	function saveToLocalStorage(): void {
@@ -386,28 +446,56 @@ export const useAppStore = defineStore("app", () => {
 		if (!state.value || !credentials.value) return;
 		if (!dirty.value) return;
 
-		if (debounceTimer && retryCount === 0) {
+		// One push at a time; a request made meanwhile runs afterwards.
+		if (syncing) {
+			pendingSync = true;
+			return;
+		}
+
+		if (debounceTimer) {
 			clearTimeout(debounceTimer);
 			debounceTimer = null;
 		}
+		if (retryTimer && retryCount === 0) {
+			clearTimeout(retryTimer);
+			retryTimer = null;
+		}
 
+		syncing = true;
+		const creds = credentials.value;
+		// Push a snapshot, so changes made during the request are detected
+		// afterwards instead of being marked as pushed.
+		const pushed: AppState = JSON.parse(JSON.stringify(state.value));
 		const client = getClient();
 		try {
 			await pushBlob(
-				credentials.value.syncId,
-				credentials.value.cryptKey,
-				credentials.value.secret,
-				state.value,
+				creds.syncId,
+				creds.cryptKey,
+				creds.secret,
+				pushed,
 				client,
 				knownExists,
 			);
-			dirty.value = false;
+			if (state.value && sameAppState(state.value, pushed)) {
+				dirty.value = false;
+			} else {
+				pendingSync = true;
+			}
 		} catch (e) {
 			console.warn("App state sync failed:", e);
 			// Retry with exponential backoff if online
 			if (navigator.onLine && retryCount < 5) {
 				const delay = Math.pow(2, retryCount) * 1000;
-				setTimeout(() => syncToBackend(retryCount + 1), delay);
+				retryTimer = setTimeout(() => {
+					retryTimer = null;
+					syncToBackend(retryCount + 1);
+				}, delay);
+			}
+		} finally {
+			syncing = false;
+			if (pendingSync) {
+				pendingSync = false;
+				scheduleDebouncedSync();
 			}
 		}
 	}
@@ -425,10 +513,7 @@ export const useAppStore = defineStore("app", () => {
 		);
 
 		if (result) {
-			// Simple replace — app state is single-user, no field-level merge needed
-			state.value = result.data;
-			dirty.value = false;
-			saveToLocalStorage();
+			applyRemoteState(result.data);
 		} else if (state.value) {
 			// Backend no longer has this record (cleaned up).  Re-register by
 			// marking dirty and pushing the local state back.
@@ -465,6 +550,7 @@ export const useAppStore = defineStore("app", () => {
 		updateListName,
 		touchList,
 		updateListMetadata,
+		updateSettings,
 		saveToLocalStorage,
 		syncToBackend,
 		pullFromBackend,

@@ -37,10 +37,7 @@ export class SyncHub {
 						clearTimeout(this.reconnectTimer);
 						this.reconnectTimer = null;
 					}
-					if (this.ws) {
-						this.ws.close();
-						this.ws = null;
-					}
+					this.dropSocket();
 					this.connect();
 				}
 			});
@@ -68,19 +65,27 @@ export class SyncHub {
 
 		this.status.value = "connecting";
 		const wsUrl = `${this.baseUrl}/api/v1/ws`;
-		this.ws = new WebSocket(wsUrl);
+		const ws = new WebSocket(wsUrl);
+		this.ws = ws;
+		// Handlers can fire after this socket was replaced (e.g. by the
+		// "online" handler); such events belong to a dead socket and must not
+		// touch the hub's state or deliver updates.
+		const isCurrent = () => this.ws === ws;
 
-		this.ws.onopen = async () => {
+		ws.onopen = async () => {
+			if (!isCurrent()) return;
 			console.log("SyncHub: WebSocket connection established");
 			this.status.value = "open";
 			this.retries.clear();
 			for (const [syncId, { secret }] of this.subscriptions) {
+				if (!isCurrent()) return;
 				console.log(`SyncHub: Subscribing to ${syncId}`);
 				await this.sendSubscribe(syncId, secret);
 			}
 		};
 
-		this.ws.onmessage = (event) => {
+		ws.onmessage = (event) => {
+			if (!isCurrent()) return;
 			try {
 				const msg = JSON.parse(event.data);
 				if (msg.type === "update") {
@@ -117,7 +122,8 @@ export class SyncHub {
 			}
 		};
 
-		this.ws.onclose = () => {
+		ws.onclose = () => {
+			if (!isCurrent()) return;
 			const wasConnecting = this.status.value === "connecting";
 			this.ws = null;
 			if (this.shouldReconnect) {
@@ -137,7 +143,8 @@ export class SyncHub {
 			}
 		};
 
-		this.ws.onerror = (err) => {
+		ws.onerror = (err) => {
+			if (!isCurrent()) return;
 			console.error("SyncHub: WebSocket error", err);
 			this.status.value = "error";
 		};
@@ -163,7 +170,9 @@ export class SyncHub {
 	private async sendSubscribe(syncId: string, secret: string) {
 		const timestamp = getNextTimestamp();
 		const signature = await signSubscribe(secret, timestamp, syncId);
-		this.ws?.send(
+		// The socket may have closed or been replaced while signing.
+		if (this.ws?.readyState !== WebSocket.OPEN) return;
+		this.ws.send(
 			JSON.stringify({
 				type: "subscribe",
 				id: syncId,
@@ -173,15 +182,22 @@ export class SyncHub {
 		);
 	}
 
+	/** Detach and close the current socket; its late events are ignored. */
+	private dropSocket() {
+		const ws = this.ws;
+		if (!ws) return;
+		this.ws = null;
+		ws.onopen = ws.onmessage = ws.onclose = ws.onerror = null;
+		ws.close();
+	}
+
 	close() {
 		this.shouldReconnect = false;
 		if (this.reconnectTimer) {
 			clearTimeout(this.reconnectTimer);
 			this.reconnectTimer = null;
 		}
-		if (this.ws) {
-			this.ws.close();
-			this.ws = null;
-		}
+		this.dropSocket();
+		this.status.value = "closed";
 	}
 }

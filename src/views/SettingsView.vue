@@ -28,13 +28,13 @@ onMounted(() => {
 async function handleSave() {
 	if (!appStore.state) return;
 
-	appStore.state.username = username.value.trim() || appStore.state.username;
-	appStore.state.settings.theme = theme.value;
-	appStore.state.settings.syncIntervalSeconds = Math.max(5, syncInterval.value);
-	appStore.dirty = true;
-	appStore.saveToLocalStorage();
+	appStore.updateSettings({
+		username: username.value.trim() || appStore.state.username,
+		theme: theme.value,
+		syncIntervalSeconds: Math.max(5, syncInterval.value),
+	});
 
-	// Sync settings to backend
+	// Sync settings to backend now rather than after the debounce
 	appStore.syncToBackend().catch((e) => {
 		console.warn("Settings sync failed:", e);
 	});
