@@ -1,5 +1,21 @@
 # Changelog
 
+### 1.8.1 (2026-11-20)
+
+#### Bug Fixes
+
+- router: remount ListView when navigating between lists (22fb6ef)
+- list: wire up autofill in inline item editing (7d274c5)
+- address low-severity audit findings (ca55edb)
+- keep share keys out of URLs, validate restore, render before sync (4c2cce4)
+- sync: merge app state across devices and close remaining sync races (c3b6cc2)
+- sync: isolate list sessions and stop losing edits during push (ba5850f)
+
+#### Maintenance
+
+- deps: update dependencies (58dc261)
+- clean up repo, docs and dead code; add tests (7beb3b9)
+
 ## 1.8.0 (2026-11-20)
 
 #### Features
@@ -130,4 +146,3 @@
 
 ### Misc
 - Initial commit (9065f1c)
-
