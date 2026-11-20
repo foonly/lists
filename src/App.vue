@@ -23,7 +23,19 @@ watch(
 
 <template>
 	<div class="app">
-		<RouterView />
+		<!--
+			Vue Router reuses a view when only its params change. ListView opens
+			its list on mount, so give each list its own instance: navigating
+			straight from one list to another then closes the old list and opens
+			the new one. Other routes keep one instance per route (ImportView
+			clears its code from the URL without being remounted).
+		-->
+		<RouterView v-slot="{ Component, route }">
+			<component
+				:is="Component"
+				:key="route.name === 'list' ? route.params.syncId : route.name"
+			/>
+		</RouterView>
 	</div>
 </template>
 
