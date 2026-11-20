@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.8.0 (2026-11-20)
+
+#### Features
+
+- list: add per-list autofill and sticky groups (4afc78e)
+
 ### 1.7.2 (2026-11-19)
 
 #### Bug Fixes
