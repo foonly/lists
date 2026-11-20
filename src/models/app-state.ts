@@ -133,6 +133,29 @@ export function sameAppState(a: AppState, b: AppState): boolean {
 	return canonical(a) === canonical(b);
 }
 
+/**
+ * Sanity-check credentials from user input (share links, restore strings) so
+ * a mangled string is rejected up front instead of failing later as a
+ * confusing decrypt or auth error:
+ *   - syncId: URL-safe id (nanoid alphabet);
+ *   - cryptKey: base64 of a 256-bit AES key;
+ *   - secret: no whitespace (it is used verbatim as the HMAC key).
+ */
+export function isValidCredentials(c: {
+	syncId: string;
+	cryptKey: string;
+	secret: string;
+}): boolean {
+	if (!/^[A-Za-z0-9_-]{1,128}$/.test(c.syncId)) return false;
+	if (!/^\S{1,256}$/.test(c.secret)) return false;
+	if (!/^[A-Za-z0-9+/]{43}=$/.test(c.cryptKey)) return false;
+	try {
+		return atob(c.cryptKey).length === 32;
+	} catch {
+		return false;
+	}
+}
+
 // Credential share format: name|syncId|cryptKey|secret
 // Uses pipe delimiter (not valid in base64, so parsing is unambiguous)
 export function encodeShareString(creds: ListCredentials): string {
@@ -156,6 +179,7 @@ export function decodeAppCredentials(
 	if (parts.length !== 3) return null;
 	const [syncId, cryptKey, secret] = parts;
 	if (!syncId || !cryptKey || !secret) return null;
+	if (!isValidCredentials({ syncId, cryptKey, secret })) return null;
 	return { syncId, cryptKey, secret };
 }
 
@@ -170,5 +194,6 @@ export function decodeShareString(
 	const syncId = parts.pop()!;
 	const name = parts.join("|");
 	if (!name || !syncId || !cryptKey || !secret) return null;
+	if (!isValidCredentials({ syncId, cryptKey, secret })) return null;
 	return { name, syncId, cryptKey, secret };
 }

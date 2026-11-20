@@ -3,6 +3,31 @@ import { sign, signGet } from "./crypto";
 import { getNextTimestamp, updateLastTimestamp } from "./utils";
 import type { SyncResponse, HistoryEntry } from "./types";
 
+/** A non-success HTTP response from the sync backend. */
+export class SyncHttpError extends Error {
+	constructor(
+		message: string,
+		readonly status: number,
+	) {
+		super(message);
+		this.name = "SyncHttpError";
+	}
+}
+
+/**
+ * Whether a failed sync is worth retrying: network failures, timeouts, rate
+ * limiting and server errors. Wrong credentials, undecryptable or invalid
+ * data and other client errors will fail the same way again.
+ */
+export function isRetryableSyncError(e: unknown): boolean {
+	// fetch() rejects with a TypeError when the request never completes.
+	if (e instanceof TypeError) return true;
+	if (e instanceof SyncHttpError) {
+		return e.status === 408 || e.status === 429 || e.status >= 500;
+	}
+	return false;
+}
+
 export class SyncClient {
 	private baseUrl: string;
 
@@ -16,7 +41,7 @@ export class SyncClient {
 		secret: string,
 		isRetry = false,
 	): Promise<SyncResponse | null> {
-		const timestamp = getNextTimestamp();
+		const timestamp = getNextTimestamp(syncId);
 		const path = `/api/v1/sync/${encodeURIComponent(syncId)}`;
 		const signature = await signGet(secret, timestamp, path);
 
@@ -39,14 +64,15 @@ export class SyncClient {
 				console.warn("SyncClient: 401 on fetch, retrying with new timestamp");
 				return this.fetch(syncId, secret, true);
 			}
-			throw new Error(
+			throw new SyncHttpError(
 				`Failed to fetch sync data: ${res.status} ${res.statusText}${text ? ` — ${text}` : ""}`,
+				res.status,
 			);
 		}
 
 		const json = await res.json();
 		const result = SyncResponseSchema.parse(json);
-		updateLastTimestamp(result.timestamp);
+		updateLastTimestamp(syncId, result.timestamp);
 		return result;
 	}
 
@@ -74,7 +100,7 @@ export class SyncClient {
 		}
 
 		const rawBody = JSON.stringify(body);
-		const timestamp = getNextTimestamp();
+		const timestamp = getNextTimestamp(syncId);
 		const signature = await sign(secret, timestamp, rawBody);
 
 		const res = await globalThis.fetch(
@@ -98,14 +124,15 @@ export class SyncClient {
 				console.warn("SyncClient: 401 on push, retrying with new timestamp");
 				return this.push(syncId, secret, data, registrationSecret, true);
 			}
-			throw new Error(
+			throw new SyncHttpError(
 				`Failed to push sync data: ${res.status} ${res.statusText}${text ? ` — ${text}` : ""}`,
+				res.status,
 			);
 		}
 	}
 
 	async history(syncId: string, secret: string): Promise<HistoryEntry[]> {
-		const timestamp = getNextTimestamp();
+		const timestamp = getNextTimestamp(syncId);
 		const path = `/api/v1/sync/${encodeURIComponent(syncId)}/history`;
 		const signature = await signGet(secret, timestamp, path);
 
@@ -117,8 +144,9 @@ export class SyncClient {
 		});
 
 		if (!res.ok) {
-			throw new Error(
+			throw new SyncHttpError(
 				`Failed to fetch history: ${res.status} ${res.statusText}`,
+				res.status,
 			);
 		}
 
@@ -131,7 +159,7 @@ export class SyncClient {
 		secret: string,
 		versionTimestamp: number,
 	): Promise<SyncResponse> {
-		const timestamp = getNextTimestamp();
+		const timestamp = getNextTimestamp(syncId);
 		const path = `/api/v1/sync/${encodeURIComponent(syncId)}/${encodeURIComponent(String(versionTimestamp))}`;
 		const signature = await signGet(secret, timestamp, path);
 
@@ -143,14 +171,15 @@ export class SyncClient {
 		});
 
 		if (!res.ok) {
-			throw new Error(
+			throw new SyncHttpError(
 				`Failed to fetch version ${versionTimestamp}: ${res.status} ${res.statusText}`,
+				res.status,
 			);
 		}
 
 		const json = await res.json();
 		const result = SyncResponseSchema.parse(json);
-		updateLastTimestamp(result.timestamp);
+		updateLastTimestamp(syncId, result.timestamp);
 		return result;
 	}
 }

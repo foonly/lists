@@ -20,8 +20,11 @@ import {
 	generateSyncId,
 	generateCryptKey,
 	generateSecret,
+	isRetryableSyncError,
+	SyncHttpError,
 } from "@/lib/sync-client";
 import { useLocalMemoryStore } from "./local-memory";
+import { idbDelete, listBlobKey } from "@/lib/idb";
 
 const APP_STATE_KEY = "lists-app-state";
 const APP_CREDENTIALS_KEY = "lists-app-credentials";
@@ -317,7 +320,7 @@ export const useAppStore = defineStore("app", () => {
 			// Key isn't valid base64 or has the wrong length.
 			return "These credentials look malformed. Copy them again and retry.";
 		}
-		if (e instanceof Error && /\b401\b/.test(e.message)) {
+		if (e instanceof SyncHttpError && e.status === 401) {
 			return "The sync server rejected these credentials. Check the secret.";
 		}
 		return e instanceof Error ? e.message : "Restore failed.";
@@ -400,6 +403,10 @@ export const useAppStore = defineStore("app", () => {
 		// Tombstone so other devices drop the list too instead of re-adding it.
 		state.value.removedLists[syncId] = Date.now();
 		useLocalMemoryStore().forgetList(syncId);
+		// Drop this device's copy of the list's contents too.
+		idbDelete(listBlobKey(syncId)).catch((e) => {
+			console.warn("Failed to delete local list data:", e);
+		});
 		commitLocalChange();
 	}
 
@@ -522,7 +529,7 @@ export const useAppStore = defineStore("app", () => {
 		} catch (e) {
 			console.warn("App state sync failed:", e);
 			// Retry with exponential backoff if online
-			if (navigator.onLine && retryCount < 5) {
+			if (navigator.onLine && retryCount < 5 && isRetryableSyncError(e)) {
 				const delay = Math.pow(2, retryCount) * 1000;
 				retryTimer = setTimeout(() => {
 					retryTimer = null;

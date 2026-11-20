@@ -97,7 +97,7 @@ export class SyncHub {
 						}
 						console.log(`SyncHub: Received update for ${msg.id}`);
 						const response = SyncResponseSchema.parse(msg);
-						updateLastTimestamp(response.timestamp);
+						updateLastTimestamp(msg.id, response.timestamp);
 						sub.handler(response);
 					}
 				} else if (msg.type === "error") {
@@ -168,7 +168,7 @@ export class SyncHub {
 	}
 
 	private async sendSubscribe(syncId: string, secret: string) {
-		const timestamp = getNextTimestamp();
+		const timestamp = getNextTimestamp(syncId);
 		const signature = await signSubscribe(secret, timestamp, syncId);
 		// The socket may have closed or been replaced while signing.
 		if (this.ws?.readyState !== WebSocket.OPEN) return;

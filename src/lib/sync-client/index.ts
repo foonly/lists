@@ -1,4 +1,4 @@
-export { SyncClient } from "./client";
+export { SyncClient, SyncHttpError, isRetryableSyncError } from "./client";
 export { SyncHub, type UpdateHandler, type ConnectionStatus } from "./hub";
 export * from "./crypto";
 export * from "./types";

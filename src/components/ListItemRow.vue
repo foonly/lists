@@ -16,6 +16,8 @@ const emit = defineEmits<{
 	delete: [];
 	edit: [];
 	"update-text": [text: string];
+	/** Editing ended on an item that never got any text: remove it. */
+	discard: [];
 	/** Text picked from autofill that belongs in another group: move it there. */
 	"move-to-group": [text: string, group: string];
 }>();
@@ -54,11 +56,21 @@ function saveEdit() {
 	const trimmed = localText.value.trim();
 	if (trimmed && trimmed !== props.item.text.value) {
 		emit("update-text", trimmed);
+	} else if (!trimmed) {
+		discardIfEmpty();
 	}
 }
 
 function cancelEdit() {
 	isEditingInline.value = false;
+	discardIfEmpty();
+}
+
+/** An inline-added item left without text would linger as a blank row. */
+function discardIfEmpty() {
+	if (!props.item.text.value.trim()) {
+		emit("discard");
+	}
 }
 
 const autofill = useAutofill(
@@ -259,7 +271,12 @@ watch(
 			<span class="item-meta">{{ getAttribution() }}</span>
 		</div>
 
-		<button class="edit-btn" aria-label="Advanced edit" @click="emit('edit')">
+		<button
+			class="edit-btn"
+			aria-label="Advanced edit"
+			@mousedown.prevent
+			@click="emit('edit')"
+		>
 			<svg
 				width="16"
 				height="16"
@@ -277,7 +294,12 @@ watch(
 			</svg>
 		</button>
 
-		<button class="delete-btn" aria-label="Delete item" @click="emit('delete')">
+		<button
+			class="delete-btn"
+			aria-label="Delete item"
+			@mousedown.prevent
+			@click="emit('delete')"
+		>
 			<svg
 				width="16"
 				height="16"

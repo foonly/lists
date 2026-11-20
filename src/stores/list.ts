@@ -10,11 +10,13 @@ import {
 	pushBlob,
 	decrypt,
 	contentChecksum,
+	isRetryableSyncError,
 	type ConnectionStatus,
 } from "@/lib/sync-client";
 import { useAppStore, getHub } from "./app";
 import { useLocalMemoryStore } from "./local-memory";
 import { stableStringify } from "@/lib/stable-json";
+import { idbGet, idbSet, listBlobKey } from "@/lib/idb";
 
 // ---------------------------------------------------------------------------
 // SyncMeta type
@@ -43,50 +45,6 @@ function defaultSyncMeta(): SyncMeta {
 		// the watcher below only fires when that status changes.
 		hubStatus: getHub().status.value,
 	};
-}
-
-// ---------------------------------------------------------------------------
-// IndexedDB helpers
-// ---------------------------------------------------------------------------
-
-const IDB_NAME = "lists-app";
-const IDB_STORE = "list-blobs";
-const IDB_VERSION = 1;
-
-function openDB(): Promise<IDBDatabase> {
-	return new Promise((resolve, reject) => {
-		const request = indexedDB.open(IDB_NAME, IDB_VERSION);
-		request.onupgradeneeded = () => {
-			const db = request.result;
-			if (!db.objectStoreNames.contains(IDB_STORE)) {
-				db.createObjectStore(IDB_STORE);
-			}
-		};
-		request.onsuccess = () => resolve(request.result);
-		request.onerror = () => reject(request.error);
-	});
-}
-
-async function idbGet(key: string): Promise<string | null> {
-	const db = await openDB();
-	return new Promise((resolve, reject) => {
-		const tx = db.transaction(IDB_STORE, "readonly");
-		const store = tx.objectStore(IDB_STORE);
-		const req = store.get(key);
-		req.onsuccess = () => resolve((req.result as string) ?? null);
-		req.onerror = () => reject(req.error);
-	});
-}
-
-async function idbSet(key: string, value: string): Promise<void> {
-	const db = await openDB();
-	return new Promise((resolve, reject) => {
-		const tx = db.transaction(IDB_STORE, "readwrite");
-		const store = tx.objectStore(IDB_STORE);
-		const req = store.put(value, key);
-		req.onsuccess = () => resolve();
-		req.onerror = () => reject(req.error);
-	});
 }
 
 // ---------------------------------------------------------------------------
@@ -171,7 +129,7 @@ export const useListStore = defineStore("list", () => {
 	}
 
 	function idbKey(): string {
-		return `list-${credentials.value!.syncId}`;
+		return listBlobKey(credentials.value!.syncId);
 	}
 
 	// ---------------------------------------------------------------------------
@@ -889,8 +847,9 @@ export const useListStore = defineStore("list", () => {
 			syncMeta.value.status = "error";
 			syncMeta.value.error = e instanceof Error ? e.message : String(e);
 
-			// Exponential backoff retry
-			if (retryCount < 5) {
+			// Exponential backoff retry, only for failures that can go away
+			// (network, rate limit, server errors).
+			if (retryCount < 5 && isRetryableSyncError(e)) {
 				const delay = Math.pow(2, retryCount) * 1000;
 				retryTimer = setTimeout(() => {
 					retryTimer = null;

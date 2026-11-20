@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed } from "vue";
+import { useNow } from "@/composables/useNow";
 
 const props = defineProps<{
 	status: string;
@@ -53,9 +54,11 @@ const statusLabel = computed(() => {
 	}
 });
 
+const now = useNow(5_000);
+
 const lastSyncedLabel = computed(() => {
 	if (!props.lastSyncedAt) return "Never synced";
-	const diff = Date.now() - props.lastSyncedAt;
+	const diff = now.value - props.lastSyncedAt;
 	const seconds = Math.floor(diff / 1000);
 	if (seconds < 5) return "Just now";
 	if (seconds < 60) return `${seconds}s ago`;

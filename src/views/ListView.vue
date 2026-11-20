@@ -52,8 +52,11 @@ function handleEdit(id: string) {
 }
 
 function handleCancelEdit() {
+	const id = editingItemId.value;
 	editingItemId.value = null;
 	listStore.editing = false;
+	// Cancelled the editor on an item that still has no text.
+	if (id) handleDiscard(id);
 }
 
 async function handleUpdate(payload: {
@@ -212,6 +215,16 @@ async function handleAddInline(groupName?: string) {
 			}, 1000);
 		});
 	}
+}
+
+/** Remove an item that was added inline but never given any text. */
+async function handleDiscard(id: string) {
+	const item = listStore.blob?.items.find((i) => i.id === id);
+	// Idempotent: toggleDelete would restore an already-deleted item.
+	if (!item || item.deleted.value || item.text.value.trim()) return;
+	// Being filled in through the advanced editor instead.
+	if (editingItemId.value === id) return;
+	await listStore.toggleDelete(id);
 }
 
 async function handleUpdateText(id: string, text: string) {
@@ -490,6 +503,7 @@ watch(
 									:auto-focus="newlyAddedItemId === item.id"
 									@toggle-done="handleToggleDone(item.id)"
 									@delete="handleDelete(item.id)"
+									@discard="handleDiscard(item.id)"
 									@edit="handleEdit(item.id)"
 									@update-text="(text) => handleUpdateText(item.id, text)"
 									@move-to-group="

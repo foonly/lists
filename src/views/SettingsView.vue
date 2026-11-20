@@ -3,6 +3,7 @@ import { ref, onMounted } from "vue";
 import { useRouter } from "vue-router";
 import { useAppStore } from "@/stores/app";
 import AppBar from "@/components/AppBar.vue";
+import { IDB_DATABASE_NAME } from "@/lib/idb";
 
 const router = useRouter();
 const appStore = useAppStore();
@@ -68,13 +69,19 @@ async function copyToClipboard(text: string, label: string) {
 	}
 }
 
-function handleReset() {
+async function handleReset() {
 	localStorage.clear();
-	try {
-		indexedDB.deleteDatabase("lists-app");
-	} catch {
-		// ignore
-	}
+	// Wait for the deletion to go through (or be blocked by another open tab)
+	// before reloading, but never hang the reset on it.
+	await new Promise<void>((resolve) => {
+		try {
+			const req = indexedDB.deleteDatabase(IDB_DATABASE_NAME);
+			req.onsuccess = req.onerror = req.onblocked = () => resolve();
+		} catch {
+			resolve();
+		}
+		setTimeout(resolve, 2000);
+	});
 	window.location.href = "/";
 }
 </script>

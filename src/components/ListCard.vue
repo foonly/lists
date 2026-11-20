@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
+import { useNow } from "@/composables/useNow";
 import type { ListCredentials } from "@/models/app-state";
 
 const props = defineProps<{
@@ -11,11 +12,12 @@ const emit = defineEmits<{
 	remove: [];
 }>();
 
+const now = useNow();
+
 const relativeTime = computed(() => {
-	const now = Date.now();
 	const timestamp =
 		props.credentials.lastModifiedAt ?? props.credentials.createdAt;
-	const diff = now - timestamp;
+	const diff = now.value - timestamp;
 	const seconds = Math.floor(diff / 1000);
 
 	if (seconds < 10) return "Just now";
