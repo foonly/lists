@@ -78,7 +78,10 @@ export const useAppStore = defineStore("app", () => {
 	// Getters
 	// ---------------------------------------------------------------------------
 
-	const isSetUp = computed(() => credentials.value !== null);
+	// Both are needed: credentials without state can't show or create lists.
+	const isSetUp = computed(
+		() => credentials.value !== null && state.value !== null,
+	);
 
 	const username = computed(() => state.value?.username ?? "");
 
@@ -179,26 +182,40 @@ export const useAppStore = defineStore("app", () => {
 			});
 		}
 
-		// Background pull first — ensure this finishes so its timestamp is consumed
-		// by the server before we start the WebSocket subscription.
-		if (credentials.value && state.value) {
-			await pullFromBackend().catch((e) => {
-				console.warn("Background pull on init failed:", e);
-			});
-			// Push changes left over from an earlier session, e.g. made offline.
-			if (dirty.value) scheduleDebouncedSync();
-		}
+		if (!credentials.value) return;
 
-		// Subscribe to real-time updates if we have credentials
-		if (credentials.value) {
-			getHub().subscribe(
-				credentials.value.syncId,
-				credentials.value.secret,
-				async (response) => {
-					await handleRemoteUpdate(response);
-				},
-			);
+		if (state.value) {
+			// The local copy is enough to render: sync in the background so the
+			// first screen never waits on the network.
+			startBackgroundSync();
+		} else {
+			// Credentials but no usable local state (e.g. storage was cleared or
+			// corrupted): there is nothing to show yet, so wait for the backend.
+			await startBackgroundSync();
 		}
+	}
+
+	/**
+	 * Pull the latest app state, then subscribe to real-time updates. The pull
+	 * finishes first so its request timestamp is consumed by the server before
+	 * the WebSocket subscription uses the next one.
+	 */
+	async function startBackgroundSync(): Promise<void> {
+		const creds = credentials.value;
+		if (!creds) return;
+
+		await pullFromBackend().catch((e) => {
+			console.warn("Background pull on init failed:", e);
+		});
+		// Push changes left over from an earlier session, e.g. made offline.
+		if (dirty.value) scheduleDebouncedSync();
+
+		// Credentials replaced meanwhile, or still no state (the user will be
+		// sent to setup): don't subscribe with credentials that may be dropped.
+		if (credentials.value !== creds || !state.value) return;
+		getHub().subscribe(creds.syncId, creds.secret, async (response) => {
+			await handleRemoteUpdate(response);
+		});
 	}
 
 	async function handleRemoteUpdate(remote: {
@@ -259,30 +276,51 @@ export const useAppStore = defineStore("app", () => {
 			);
 		}
 
+		// Fetch and decrypt before storing anything, so failed attempts leave
+		// the app exactly as it was.
+		let result: Awaited<ReturnType<typeof pullBlob<AppState>>>;
+		try {
+			result = await pullBlob(
+				parsed.syncId,
+				parsed.secret,
+				parsed.cryptKey,
+				AppStateSchema,
+				getClient(),
+			);
+		} catch (e) {
+			throw new Error(describeRestoreError(e), { cause: e });
+		}
+		if (!result) {
+			throw new Error("No app state found on backend for these credentials");
+		}
+
 		credentials.value = parsed;
+		state.value = result.data;
+		dirty.value = false;
 		saveToLocalStorage();
 
 		getHub().subscribe(parsed.syncId, parsed.secret, async (response) => {
 			await handleRemoteUpdate(response);
 		});
+	}
 
-		const client = getClient();
-		const result = await pullBlob(
-			parsed.syncId,
-			parsed.secret,
-			parsed.cryptKey,
-			AppStateSchema,
-			client,
-		);
-
-		if (result) {
-			state.value = result.data;
-		} else {
-			throw new Error("No app state found on backend for these credentials");
+	function describeRestoreError(e: unknown): string {
+		if (e instanceof TypeError) {
+			// fetch() rejects with TypeError when the server can't be reached.
+			return "Couldn't reach the sync server. Check your connection and try again.";
 		}
-
-		dirty.value = false;
-		saveToLocalStorage();
+		if (e instanceof DOMException && e.name === "OperationError") {
+			// AES-GCM decryption failed: the key doesn't match this data.
+			return "These credentials don't match the stored data. Check the key.";
+		}
+		if (e instanceof DOMException) {
+			// Key isn't valid base64 or has the wrong length.
+			return "These credentials look malformed. Copy them again and retry.";
+		}
+		if (e instanceof Error && /\b401\b/.test(e.message)) {
+			return "The sync server rejected these credentials. Check the secret.";
+		}
+		return e instanceof Error ? e.message : "Restore failed.";
 	}
 
 	async function createList(name: string): Promise<ListCredentials> {

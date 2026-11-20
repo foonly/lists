@@ -132,7 +132,9 @@ function showToast(message: string, duration = 2000) {
 async function handleShare() {
 	if (!creds.value) return;
 	const shareString = encodeShareString(creds.value);
-	const shareUrl = `${window.location.origin}/import/${encodeURIComponent(shareString)}`;
+	// The fragment is never sent to the web server, so the list's keys stay
+	// out of its access logs.
+	const shareUrl = `${window.location.origin}/import#${encodeURIComponent(shareString)}`;
 	try {
 		await navigator.clipboard.writeText(shareUrl);
 		showToast("Link copied!");

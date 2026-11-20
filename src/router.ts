@@ -44,7 +44,10 @@ router.beforeEach(async (to) => {
 
 	if (!appStore.isSetUp && to.name !== "setup") {
 		if (to.name === "import") {
-			const code = (to.params.code as string) || (to.query.c as string);
+			const code =
+				(to.hash.length > 1 ? to.hash.slice(1) : "") ||
+				(to.params.code as string) ||
+				(to.query.c as string);
 			if (code) {
 				localStorage.setItem("pending_import", code);
 			}
@@ -57,7 +60,7 @@ router.beforeEach(async (to) => {
 		if (pendingImport && (to.name === "home" || to.name === "import")) {
 			localStorage.removeItem("pending_import");
 			if (to.name === "home") {
-				return { name: "import", params: { code: pendingImport } };
+				return { name: "import", hash: `#${pendingImport}` };
 			}
 		}
 
