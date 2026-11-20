@@ -132,8 +132,27 @@ export const useListStore = defineStore("list", () => {
 	/** When true, background syncs are skipped to avoid overwriting in-progress edits. */
 	const editing = ref(false);
 
+	/**
+	 * Incremented whenever a list is opened or closed. Async work captures the
+	 * value it started with and drops its result once it no longer matches, so
+	 * a slow request for one list can never write into another.
+	 */
+	let session = 0;
+	/** The session a sync is currently running for, if any. */
+	let syncingSession: number | null = null;
+	/** A sync was skipped (editing, or one already running) and must run later. */
+	let pendingResync = false;
+	let pendingForce = false;
+
 	let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-	let pollTimer: ReturnType<typeof setInterval> | null = null;
+	let retryTimer: ReturnType<typeof setTimeout> | null = null;
+
+	// Run a sync that was skipped while the item editor was open.
+	watch(editing, (isEditing) => {
+		if (!isEditing && pendingResync && credentials.value) {
+			runPendingResync();
+		}
+	});
 
 	// ---------------------------------------------------------------------------
 	// Internal helpers
@@ -226,6 +245,7 @@ export const useListStore = defineStore("list", () => {
 			return;
 		}
 
+		const gen = session;
 		const newCache = new Map<string, string>();
 		const promises = blob.value.items
 			.filter((item) => !item.deleted.value)
@@ -239,6 +259,7 @@ export const useListStore = defineStore("list", () => {
 			});
 
 		await Promise.all(promises);
+		if (gen !== session) return;
 		checksumCache.value = newCache;
 	}
 
@@ -294,7 +315,9 @@ export const useListStore = defineStore("list", () => {
 	async function loadFromIndexedDB(): Promise<void> {
 		if (!credentials.value) return;
 
+		const gen = session;
 		const raw = await idbGet(idbKey());
+		if (gen !== session) return;
 		if (raw) {
 			try {
 				blob.value = ListBlobSchema.parse(JSON.parse(raw));
@@ -372,7 +395,7 @@ export const useListStore = defineStore("list", () => {
 
 	const DEBOUNCE_MS = 2_000;
 
-	/** Schedule a sync 5 s after the last mutation.  Resets on each call. */
+	/** Schedule a sync 2 s after the last mutation.  Resets on each call. */
 	function scheduleDebouncedSync(): void {
 		if (debounceTimer !== null) {
 			clearTimeout(debounceTimer);
@@ -390,6 +413,23 @@ export const useListStore = defineStore("list", () => {
 			clearTimeout(debounceTimer);
 			debounceTimer = null;
 		}
+		if (retryTimer !== null) {
+			clearTimeout(retryTimer);
+			retryTimer = null;
+		}
+	}
+
+	function runPendingResync(): void {
+		const force = pendingForce;
+		pendingResync = false;
+		pendingForce = false;
+		if (force) {
+			sync(0, true).catch(() => {
+				/* errors captured in syncMeta */
+			});
+		} else {
+			scheduleDebouncedSync();
+		}
 	}
 
 	// ---------------------------------------------------------------------------
@@ -397,35 +437,45 @@ export const useListStore = defineStore("list", () => {
 	// ---------------------------------------------------------------------------
 
 	async function openList(creds: ListCredentials): Promise<void> {
+		const gen = ++session;
 		credentials.value = creds;
+		// Never show a previous list's data while this one loads.
+		blob.value = null;
 
 		await loadFromIndexedDB();
+		if (gen !== session) return;
 		if (!blob.value) {
 			blob.value = { version: 1, items: [] };
 		}
 
 		await updateChecksums();
+		if (gen !== session) return;
 
 		// Trigger an initial background sync first so its timestamp is
 		// consumed before we subscribe to real-time updates.
 		await sync().catch(() => {
 			/* errors are captured in syncMeta */
 		});
+		if (gen !== session) return;
 
 		// Subscribe to real-time updates
 		getHub().subscribe(creds.syncId, creds.secret, async (response) => {
-			await handleRemoteUpdate(response);
+			await handleRemoteUpdate(response, gen);
 		});
 	}
 
-	async function handleRemoteUpdate(remote: {
-		data: string;
-		timestamp: number;
-	}): Promise<void> {
-		if (!credentials.value) return;
+	async function handleRemoteUpdate(
+		remote: {
+			data: string;
+			timestamp: number;
+		},
+		gen: number,
+	): Promise<void> {
+		if (!credentials.value || gen !== session) return;
 
 		try {
 			const decrypted = await decrypt(remote.data, credentials.value.cryptKey);
+			if (gen !== session) return;
 			const parsed = JSON.parse(decrypted);
 			const remoteData = ListBlobSchema.parse(parsed);
 
@@ -446,20 +496,35 @@ export const useListStore = defineStore("list", () => {
 			syncMeta.value.dirty = false;
 
 			await updateChecksums();
+			if (gen !== session) return;
 			await saveToIndexedDB();
 			updateAppMetadata();
 		} catch (e) {
+			if (gen !== session) return;
 			syncMeta.value.status = "error";
 			syncMeta.value.error = e instanceof Error ? e.message : String(e);
 		}
 	}
 
 	async function closeList(): Promise<void> {
+		// Invalidate all in-flight work for this list before anything else.
+		session++;
 		if (credentials.value) {
 			getHub().unsubscribe(credentials.value.syncId);
 		}
 		stopAllTimers();
-		await saveToIndexedDB();
+		pendingResync = false;
+		pendingForce = false;
+		// The item editor may still have been open when the list was left.
+		editing.value = false;
+
+		// Snapshot what to persist, then clear state synchronously so nothing
+		// can observe a half-closed list while the write is pending.
+		let snapshot: { key: string; json: string } | null = null;
+		if (blob.value && credentials.value) {
+			rememberLocally();
+			snapshot = { key: idbKey(), json: JSON.stringify(blob.value) };
+		}
 
 		blob.value = null;
 		credentials.value = null;
@@ -467,6 +532,10 @@ export const useListStore = defineStore("list", () => {
 		lastKnownRemoteJson = null;
 		checksumCache.value = new Map();
 		syncMeta.value = defaultSyncMeta();
+
+		if (snapshot) {
+			await idbSet(snapshot.key, snapshot.json);
+		}
 	}
 
 	async function addItem(
@@ -703,8 +772,19 @@ export const useListStore = defineStore("list", () => {
 	}
 
 	async function sync(retryCount = 0, force = false): Promise<void> {
-		if (!credentials.value) return;
-		if (editing.value) return;
+		// Capture the list this sync belongs to; every await below re-checks
+		// `gen` so a sync can't touch a list that was opened after it started.
+		const creds = credentials.value;
+		if (!creds) return;
+		const gen = session;
+
+		// Don't sync over an open editor, and never run two syncs at once
+		// (concurrent pushes would race). Remember to run once unblocked.
+		if (editing.value || syncingSession === gen) {
+			pendingResync = true;
+			pendingForce ||= force;
+			return;
+		}
 
 		if (debounceTimer && retryCount === 0) {
 			clearTimeout(debounceTimer);
@@ -717,22 +797,21 @@ export const useListStore = defineStore("list", () => {
 		}
 
 		const client = getClient();
-		if (!client) return;
+		syncingSession = gen;
 
 		try {
-			const localJson = JSON.stringify(blob.value);
-
 			// If we haven't confirmed existence yet, or we're forcing a refresh,
 			// we MUST pull to see what's on the server.
 			if (!remoteExistsConfirmed.value || force) {
 				syncMeta.value.status = "pulling";
 				const remote = await pullBlob(
-					credentials.value.syncId,
-					credentials.value.secret,
-					credentials.value.cryptKey,
+					creds.syncId,
+					creds.secret,
+					creds.cryptKey,
 					ListBlobSchema,
 					client,
 				);
+				if (gen !== session) return;
 
 				if (remote) {
 					remoteExistsConfirmed.value = true;
@@ -758,39 +837,60 @@ export const useListStore = defineStore("list", () => {
 			}
 
 			// --- Push (only if something changed) ----------------------------
-			const needsPush = localJson !== lastKnownRemoteJson;
+			// Snapshot exactly what is sent: edits made while the request is
+			// in flight must not be recorded as already on the server.
+			const pushedJson = JSON.stringify(blob.value);
 
-			if (needsPush) {
+			if (pushedJson !== lastKnownRemoteJson) {
 				syncMeta.value.status = "pushing";
 				await pushBlob(
-					credentials.value.syncId,
-					credentials.value.cryptKey,
-					credentials.value.secret,
-					blob.value,
+					creds.syncId,
+					creds.cryptKey,
+					creds.secret,
+					JSON.parse(pushedJson) as ListBlob,
 					client,
 					remoteExistsConfirmed.value,
 				);
+				if (gen !== session) return;
 				remoteExistsConfirmed.value = true;
-				// Update our local tracking so we don't push the same thing again
-				lastKnownRemoteJson = JSON.stringify(blob.value);
+				lastKnownRemoteJson = pushedJson;
 			}
 
 			// --- Done --------------------------------------------------------
+			const stillDirty = JSON.stringify(blob.value) !== lastKnownRemoteJson;
 			syncMeta.value.status = "idle";
+			syncMeta.value.error = null;
 			syncMeta.value.lastSyncedAt = Date.now();
-			syncMeta.value.dirty = false;
+			syncMeta.value.dirty = stillDirty;
 
 			await updateChecksums();
+			if (gen !== session) return;
 			await saveToIndexedDB();
 			updateAppMetadata();
+
+			// Changes arrived during the push: send them too.
+			if (stillDirty) scheduleDebouncedSync();
 		} catch (e) {
+			if (gen !== session) return;
 			syncMeta.value.status = "error";
 			syncMeta.value.error = e instanceof Error ? e.message : String(e);
 
-			// Exponential backoff retry for non-4xx errors
+			// Exponential backoff retry
 			if (retryCount < 5) {
 				const delay = Math.pow(2, retryCount) * 1000;
-				setTimeout(() => sync(retryCount + 1), delay);
+				retryTimer = setTimeout(() => {
+					retryTimer = null;
+					if (gen === session) {
+						sync(retryCount + 1).catch(() => {
+							/* errors captured in syncMeta */
+						});
+					}
+				}, delay);
+			}
+		} finally {
+			if (syncingSession === gen) syncingSession = null;
+			if (gen === session && pendingResync && !editing.value) {
+				runPendingResync();
 			}
 		}
 	}
