@@ -39,7 +39,9 @@ const localText = ref(props.item.text.value);
 const textInput = ref<HTMLInputElement | null>(null);
 
 function startEdit() {
-	if (isDone()) return;
+	// Clicks inside the input (moving the caret) bubble up to the wrapper:
+	// don't restart the edit and throw away what was typed.
+	if (isDone() || isEditingInline.value) return;
 	localText.value = props.item.text.value;
 	isEditingInline.value = true;
 	nextTick(() => {
@@ -249,9 +251,18 @@ watch(
 						v-model="localText"
 						class="inline-edit-input"
 						placeholder="Item text..."
-						@blur="saveEdit"
-						@keydown.enter="saveEdit"
-						@keydown.esc="cancelEdit"
+						autocomplete="off"
+						@input="autofill.onInput"
+						@blur="handleInlineBlur"
+						@keydown="handleInlineKeydown"
+					/>
+					<!-- .stop: a pick must not bubble to the wrapper's startEdit -->
+					<AutofillMenu
+						:suggestions="autofill.suggestions.value"
+						:active-index="autofill.activeIndex.value"
+						:show-groups="item.group.value === null"
+						@pick="pickSuggestion"
+						@click.stop
 					/>
 				</template>
 				<template v-else>
